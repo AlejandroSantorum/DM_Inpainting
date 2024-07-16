@@ -1,6 +1,7 @@
 """
 Train a diffusion model on images.
 """
+import os
 import sys
 import argparse
 
@@ -17,42 +18,43 @@ from guided_diffusion.script_util import (
     add_dict_to_argparser,
 )
 import torch as th
+from torch.utils.data.distributed import DistributedSampler
 from guided_diffusion.train_util import TrainLoop
 
 
-def main():
-    args = create_argparser().parse_args()
+def train_model(
+    rank: int,
+    world_size: int,
+    args: dict,
+):
+    # TODO: logger.configure(dir=output_dir)
 
-    dist_util.setup_dist()
-    logger.configure()
-    today = datetime.now()
-    # print('today', today)
-    logger.log("TRAINING " + str(today))
-    logger.log("args: " + str(args))
+    dist_util.setup_dist(rank, world_size)
+
+    # Set the device
+    device = th.device(f"cuda:{rank}")
+    th.cuda.set_device(device)
+
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
-
-    print("args", args)
-
-    # breakpoint()
-
-    model.to(dist_util.dev())
+    model.to(device)
     schedule_sampler = create_named_schedule_sampler(
         args.schedule_sampler, diffusion, maxt=1000
     )
 
-    # print('SEGMENTATION TRAIN MAIN')
     logger.log("creating data loader...")
     ds = BRATSDataset(args.data_dir, test_flag=False)
-    print("ds", ds)
-    datal = th.utils.data.DataLoader(ds, batch_size=args.batch_size, shuffle=True)
+
+    # Create a distributed sampler
+    sampler = DistributedSampler(ds, num_replicas=world_size, rank=rank)
+
+    datal = th.utils.data.DataLoader(ds, batch_size=args.batch_size, sampler=sampler)
     data = iter(datal)
 
-    # print('data', data)
+    logger.log("Initiating training ...")
 
-    logger.log("training...")
     TrainLoop(
         model=model,
         diffusion=diffusion,
@@ -72,6 +74,30 @@ def main():
         weight_decay=args.weight_decay,
         lr_anneal_steps=args.lr_anneal_steps,
     ).run_loop()
+
+    logger.log("Training finished.")
+
+
+def main():
+    input_args = create_argparser().parse_args()
+
+    logger.configure()
+
+    logger.log("Training " + str(datetime.now()))
+    logger.log("Input args: " + str(input_args))
+
+        # number of GPUs
+    world_size = th.cuda.device_count()
+    print(f"Number of CUDA available devices (world size): {world_size}")
+    print(f"IDs of CUDA available devices: {os.getenv('CUDA_VISIBLE_DEVICES')}")
+
+    th.multiprocessing.spawn(
+        train_model,
+        args=(world_size, input_args),
+        nprocs=world_size,
+        join=True,
+    )
+    
 
 
 def create_argparser():

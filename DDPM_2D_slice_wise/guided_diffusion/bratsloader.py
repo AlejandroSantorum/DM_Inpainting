@@ -18,7 +18,7 @@ class BRATSDataset(torch.utils.data.Dataset):
         if test_flag:
             self.seqtypes = ["voided", "mask"]
         else:
-            self.seqtypes = ["diseased", "mask", "healthy"]
+            self.seqtypes = ["t1n", "voided", "healthy"]  # Originally: ["diseased", "mask", "healthy"]
 
         self.seqtypes_set = set(self.seqtypes)
         self.database = []
@@ -44,14 +44,18 @@ class BRATSDataset(torch.utils.data.Dataset):
                                     mask_to_define_rand, ((0, 0), (0, 0), (34, 35))
                                 )
                                 mask_to_define_rand = mask_to_define_rand[8:-8, 8:-8, :]
-                            for i in range(0, 224):
+                            for i in range(0, 155): # 224):
                                 mask_slice = mask_to_define_rand[:, :, i]
                                 if np.sum(mask_slice) != 0:
                                     slice_range.append(i)
 
-                    assert (
-                        set(datapoint.keys()) == self.seqtypes_set
-                    ), f"datapoint is incomplete, keys are {datapoint.keys()}"
+                    if not self.seqtypes_set.issubset(set(datapoint.keys())):
+                        raise AssertionError(f"""
+                            Datapoint is incomplete.\n
+                            Datapoint keys are {datapoint.keys()}\n
+                            Expected keys are {self.seqtypes}
+                        """)
+
                     self.database.append(datapoint)
                     self.mask_vis.append(slice_range)
 
@@ -123,7 +127,7 @@ class BRATSDataset(torch.utils.data.Dataset):
             label = label.unsqueeze(0)
             path = filedict[seqtype]
 
-            return (image, label, path, slicedict)
+            return (image, label, slicedict) # Originally: (image, label, path, slicedict)
 
     def __len__(self):
         return len(self.database)
