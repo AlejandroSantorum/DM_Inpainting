@@ -173,9 +173,6 @@ class TrainLoop:
         ):
             try:
                 batch, cond, slice_dict = next(data_iter)
-                print("Batch shape: ", batch.shape)
-                print("Cond shape cond: ", cond.shape)
-                print("Length slice_dict: ", slice_dict, len(slice_dict))
                 slice_rand = random.shuffle(slice_dict)
                 if len(slice_dict) >= 16:
                     slices_chosen = random.sample(slice_dict, 16)
@@ -190,8 +187,6 @@ class TrainLoop:
                 cond_stack = th.stack(cond_all)
                 batch_stack = batch_stack.squeeze()
                 cond_stack = cond_stack.squeeze(1).squeeze(-1)
-                print("Batch stack shape: ", batch_stack.shape)
-                print("Cond stack shape: ", cond_stack.shape)
 
             except StopIteration:
                 # StopIteration is thrown if dataset ends

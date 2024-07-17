@@ -18,7 +18,8 @@ class BRATSDataset(torch.utils.data.Dataset):
         if test_flag:
             self.seqtypes = ["voided", "mask"]
         else:
-            self.seqtypes = ["t1n", "voided", "healthy"]  # Originally: ["diseased", "mask", "healthy"]
+            # Originally: self.seqtypes = ["diseased", "mask", "healthy"]
+            self.seqtypes = ["t1n", "voided", "healthy"]
 
         self.seqtypes_set = set(self.seqtypes)
         self.database = []
@@ -44,7 +45,8 @@ class BRATSDataset(torch.utils.data.Dataset):
                                     mask_to_define_rand, ((0, 0), (0, 0), (34, 35))
                                 )
                                 mask_to_define_rand = mask_to_define_rand[8:-8, 8:-8, :]
-                            for i in range(0, 155): # 224):
+                            # Originally: for i in range(0, 244):
+                            for i in range(0, 155):
                                 mask_slice = mask_to_define_rand[:, :, i]
                                 if np.sum(mask_slice) != 0:
                                     slice_range.append(i)
@@ -99,7 +101,7 @@ class BRATSDataset(torch.utils.data.Dataset):
                     img_preprocessed = torch.tensor(mask_numpy_crop)
 
                 else:
-                    print("unknown seqtype")
+                    print(f"unknown seqtype: {seqtype}")
 
                 out_single.append(img_preprocessed)
 
@@ -112,9 +114,17 @@ class BRATSDataset(torch.utils.data.Dataset):
 
         else:
             for seqtype in self.seqtypes:
-                nib_img = np.array(nibabel.load(filedict[seqtype]).dataobj).astype(
-                    np.float32
-                )
+                # Originally:
+                # nib_img = np.array(nibabel.load(filedict[seqtype]).dataobj).astype(
+                #     np.float32
+                # )
+                #######################################################################
+                ### NOTE: Resampling to shape 256x256 since some pre-processing code is missing #####
+                nib_img = nibabel.load(filedict[seqtype])
+                from nilearn.image import resample_img
+                nib_img = resample_img(nib_img, target_affine=nib_img.affine, target_shape=(256, 256, 155))
+                nib_img = np.array(nib_img.dataobj).astype(np.float32)
+                #######################################################################
                 path = filedict[seqtype]
                 img_preprocessed = torch.tensor(nib_img)
 
@@ -127,7 +137,8 @@ class BRATSDataset(torch.utils.data.Dataset):
             label = label.unsqueeze(0)
             path = filedict[seqtype]
 
-            return (image, label, slicedict) # Originally: (image, label, path, slicedict)
+            # Originally: return (image, label, path, slicedict)
+            return (image, label, slicedict)
 
     def __len__(self):
         return len(self.database)

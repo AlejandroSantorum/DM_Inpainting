@@ -27,8 +27,6 @@ def train_model(
     world_size: int,
     args: dict,
 ):
-    # TODO: logger.configure(dir=output_dir)
-
     dist_util.setup_dist(rank, world_size)
 
     # Set the device
@@ -81,12 +79,15 @@ def train_model(
 def main():
     input_args = create_argparser().parse_args()
 
-    logger.configure()
+    if input_args.output_dir:
+        logger.configure(dir=input_args.output_dir)
+    else:
+        logger.configure()
 
     logger.log("Training " + str(datetime.now()))
     logger.log("Input args: " + str(input_args))
 
-        # number of GPUs
+    # number of GPUs
     world_size = th.cuda.device_count()
     print(f"Number of CUDA available devices (world size): {world_size}")
     print(f"IDs of CUDA available devices: {os.getenv('CUDA_VISIBLE_DEVICES')}")
@@ -103,6 +104,7 @@ def main():
 def create_argparser():
     defaults = dict(
         data_dir="",
+        output_dir="",  # NOTE: Added by Santorum
         schedule_sampler="uniform",
         lr=1e-4,
         weight_decay=0.0,
