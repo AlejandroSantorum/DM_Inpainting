@@ -67,7 +67,7 @@ class BRATSDataset(torch.utils.data.Dataset):
         filedict = self.database[x]
         slicedict = self.mask_vis[x]
 
-        print("input files ", filedict)
+        # print("input files ", filedict)
 
         out_single = []
 
