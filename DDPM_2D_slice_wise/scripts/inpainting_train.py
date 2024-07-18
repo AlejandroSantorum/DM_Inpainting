@@ -27,6 +27,11 @@ def train_model(
     world_size: int,
     args: dict,
 ):
+    if args.output_dir is not None:
+        logger.configure(dir=args.output_dir)
+    else:
+        logger.configure()
+
     dist_util.setup_dist(rank, world_size)
 
     # Set the device
@@ -79,14 +84,8 @@ def train_model(
 def main():
     input_args = create_argparser().parse_args()
 
-    if input_args.output_dir:
-        logger.configure(dir=input_args.output_dir)
-    else:
-        logger.configure()
-
-    logger.log("Training " + str(datetime.now()))
-    logger.log("Input args: " + str(input_args))
-
+    print("Training " + str(datetime.now()))
+    print("Input args: " + str(input_args))
     # number of GPUs
     world_size = th.cuda.device_count()
     print(f"Number of CUDA available devices (world size): {world_size}")

@@ -68,10 +68,9 @@ class BRATSDataset(torch.utils.data.Dataset):
         slicedict = self.mask_vis[x]
 
         # print("input files ", filedict)
+        # print("---------------------")
 
         out_single = []
-
-        print("---------------------")
 
         if self.test_flag:
             for seqtype in self.seqtypes:
