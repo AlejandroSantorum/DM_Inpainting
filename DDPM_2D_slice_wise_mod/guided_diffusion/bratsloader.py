@@ -16,7 +16,8 @@ class BRATSDataset(torch.utils.data.Dataset):
 
         self.test_flag = test_flag
         if test_flag:
-            self.seqtypes = ["voided", "mask"]
+            # Originally: self.seqtypes = ["voided", "mask"]
+            self.seqtypes = ["voided", "mask", "t1n"]
         else:
             # Originally: self.seqtypes = ["diseased", "mask", "healthy"]
             self.seqtypes = ["voided", "mask", "t1n"]
@@ -73,46 +74,47 @@ class BRATSDataset(torch.utils.data.Dataset):
 
         out_single = []
 
+        ############################################################
+        # Originally:
+        # if self.test_flag:
+        #     for seqtype in self.seqtypes:
+        #         if seqtype == "voided":
+        #             nib_img = np.array(nibabel.load(filedict[seqtype]).dataobj).astype(
+        #                 np.float32
+        #             )
+        #             path = filedict[seqtype]
+        #             t1_numpy_pad = np.pad(nib_img, ((0, 0), (0, 0), (34, 35)))
+        #             t1_numpy_crop = t1_numpy_pad[8:-8, 8:-8, :]
+        #             t1_clipped = np.clip(
+        #                 t1_numpy_crop,
+        #                 np.quantile(t1_numpy_crop, 0.001),
+        #                 np.quantile(t1_numpy_crop, 0.999),
+        #             )
+        #             t1_normalized = (t1_clipped - np.min(t1_clipped)) / (
+        #                 np.max(t1_clipped) - np.min(t1_clipped)
+        #             )
+        #             img_preprocessed = torch.tensor(t1_normalized)
+        #         elif seqtype == "mask":
+        #             nib_img = np.array(nibabel.load(filedict[seqtype]).dataobj).astype(
+        #                 np.float32
+        #             )
+        #             path = filedict[seqtype]
+        #             mask_numpy_pad = np.pad(nib_img, ((0, 0), (0, 0), (34, 35)))
+        #             mask_numpy_crop = mask_numpy_pad[8:-8, 8:-8, :]
+        #             img_preprocessed = torch.tensor(mask_numpy_crop)
+
+        #         else:
+        #             print(f"unknown seqtype: {seqtype}")
+
+        #         out_single.append(img_preprocessed)
+
+        #     out_single = torch.stack(out_single)
+
+        #     image = out_single[0:2, ...]
+        #     path = filedict[seqtype]
+        ############################################################
+
         if self.test_flag:
-            ############################################################
-            # Originally:
-            # for seqtype in self.seqtypes:
-            #     if seqtype == "voided":
-            #         nib_img = np.array(nibabel.load(filedict[seqtype]).dataobj).astype(
-            #             np.float32
-            #         )
-            #         path = filedict[seqtype]
-            #         t1_numpy_pad = np.pad(nib_img, ((0, 0), (0, 0), (34, 35)))
-            #         t1_numpy_crop = t1_numpy_pad[8:-8, 8:-8, :]
-            #         t1_clipped = np.clip(
-            #             t1_numpy_crop,
-            #             np.quantile(t1_numpy_crop, 0.001),
-            #             np.quantile(t1_numpy_crop, 0.999),
-            #         )
-            #         t1_normalized = (t1_clipped - np.min(t1_clipped)) / (
-            #             np.max(t1_clipped) - np.min(t1_clipped)
-            #         )
-            #         img_preprocessed = torch.tensor(t1_normalized)
-            #     elif seqtype == "mask":
-            #         nib_img = np.array(nibabel.load(filedict[seqtype]).dataobj).astype(
-            #             np.float32
-            #         )
-            #         path = filedict[seqtype]
-            #         mask_numpy_pad = np.pad(nib_img, ((0, 0), (0, 0), (34, 35)))
-            #         mask_numpy_crop = mask_numpy_pad[8:-8, 8:-8, :]
-            #         img_preprocessed = torch.tensor(mask_numpy_crop)
-
-            #     else:
-            #         print(f"unknown seqtype: {seqtype}")
-
-            #     out_single.append(img_preprocessed)
-
-            # out_single = torch.stack(out_single)
-
-            # image = out_single[0:2, ...]
-            # path = filedict[seqtype]
-            ############################################################
-
             for seqtype in self.seqtypes:
                 nib_img = np.array(nibabel.load(filedict[seqtype]).dataobj).astype(np.float32)
                 path = filedict[seqtype]
@@ -120,7 +122,7 @@ class BRATSDataset(torch.utils.data.Dataset):
                 out_single.append(img_preprocessed)
 
             out_single = torch.stack(out_single)
-            image = out_single[0:2, ...]
+            image = out_single[0:3, ...]  # voided, mask, t1n
             path = filedict[seqtype]
 
             return (image, path, slicedict)
