@@ -1,274 +1,144 @@
-"""
-Generate a large batch of image samples from a model and save them as a large
-numpy array. This can be used to produce samples for FID evaluation.
-"""
-
-
-# BraTS inpainting challenge 2023 pipeline
-
-import argparse
 import os
-import math
-import nibabel as nib
-from prettytable import PrettyTable
-import sys
-import random
-
-sys.path.append(".")
-import numpy as np
-import time
 import torch as th
-import torch.distributed as dist
-import create_submission_adapted
-from datetime import datetime
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+from scipy.ndimage import rotate
+
 from guided_diffusion import dist_util, logger
 from guided_diffusion.bratsloader import BRATSDataset
-from guided_diffusion.script_util import (
-    NUM_CLASSES,
-    model_and_diffusion_defaults,
-    create_model_and_diffusion,
-    add_dict_to_argparser,
-    args_to_dict,
-)
-
-seed = 10
-th.manual_seed(seed)
-th.cuda.manual_seed_all(seed)
-np.random.seed(seed)
-random.seed(seed)
+from guided_diffusion.script_util import create_model_and_diffusion
 
 
-def visualize(img):
-    _min = img.min()
-    _max = img.max()
-    normalized_img = (img - _min) / (_max - _min)
-    return normalized_img
+def get_model_and_diffusion(image_size):
+    model_pt_path = "/scratch/santorum/checkpoints/replic_durrer_inpaint_slicewise_mni/savedmodel120000.pt"
 
-
-def dice_score(pred, targs):
-    pred = (pred > 0).float()
-    return 2.0 * (pred * targs).sum() / (pred + targs).sum()
-
-
-def count_parameters(model):
-    table = PrettyTable(["Modules", "Parameters"])
-    total_params = 0
-    for name, parameter in model.named_parameters():
-        if not parameter.requires_grad:
-            continue
-        params = parameter.numel()
-        table.add_row([name, params])
-        total_params += params
-    print(table)
-    print(f"Total Trainable Params: {total_params}")
-    return total_params
-
-
-def main():
-    args = create_argparser().parse_args()
-    # dist_util.setup_dist()
-    logger.configure(dir=args.log_dir)
-    today = datetime.now()
-    logger.log("SAMPLING " + str(today))
-    logger.log("args: " + str(args))
-    logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
-        **args_to_dict(args, model_and_diffusion_defaults().keys())
+        # diffusion defaults
+        learn_sigma=True,
+        diffusion_steps=1000,
+        noise_schedule="linear",
+        timestep_respacing="",
+        use_kl=False,
+        predict_xstart=False,
+        rescale_timesteps=False,
+        rescale_learned_sigmas=False,
+        # model defaults
+        image_size=image_size,
+        num_channels=128,  # why 128 channels?
+        num_res_blocks=2,
+        num_heads=1,
+        num_heads_upsample=-1,
+        num_head_channels=-1,
+        attention_resolutions="16",
+        channel_mult="",
+        dropout=0.0,
+        class_cond=False,
+        use_checkpoint=False,
+        use_scale_shift_norm=False,
+        resblock_updown=False,
+        use_fp16=False,
+        use_new_attention_order=False,
     )
-
-    ds = BRATSDataset(args.data_dir, test_flag=True)
-    datal = th.utils.data.DataLoader(
-        ds,
-        batch_size=args.batch_size,  # put this batch size to 1, use second loop to apply batch size of 16 within 3d volumes
-        shuffle=False,
-    )
-    data = iter(datal)
-    print("data", data)
-    all_images = []
-    # model.load_state_dict(
-    #     dist_util.load_state_dict(args.model_path, map_location="cpu")
-    # )
-    with open(args.model_path, "rb") as f:
+    with open(model_pt_path, "rb") as f:
         model_data = th.load(f, map_location="cpu")
     model.load_state_dict(model_data)
-
-    pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-    # model.to(dist_util.dev())
-    # model.to(th.device("cuda"))
-    model.to(th.device("cpu"))
-    if args.use_fp16:
-        model.convert_to_fp16()
-    model.eval()
-
-    b_all = []
-
-    dir_path = str(args.data_dir)
-    count = 0
-    for path in os.listdir(dir_path):
-        if os.path.isdir(os.path.join(dir_path, path)):
-            count += 1
-
-    for d in range(0, count):
-        print("sampling file ", str(d + 1), " of ", str(count))
-
-        batch, path, slicedict = next(data)
-        generated_3D = np.asarray(batch[:, 0, :, :, :].squeeze())
-
-        batch_size_vol = args.sub_batch
-        nr_batches = len(slicedict) / batch_size_vol
-
-        nr_batches = math.ceil(nr_batches)
-
-        for b in range(0, nr_batches):
-            out_batch = []
-            s_sub = []
-
-            if len(slicedict) > b * batch_size_vol + batch_size_vol:
-                for s in slicedict[
-                    b * batch_size_vol : (b * batch_size_vol + batch_size_vol)
-                ]:
-                    out_batch.append(batch[..., s])
-
-                    s_sub.append(s)
-
-                out_batch = th.stack(out_batch)
-
-                out_batch = out_batch.squeeze(1)
-
-                out_batch = out_batch.squeeze(4)
-
-                c = th.randn_like(out_batch[:, :1, ...])
-
-                out_batch = th.cat((out_batch, c), dim=1)
-
-                p_s = (
-                    path[0].split("/")[-1].split(".")[0].split("-")[2]
-                    + "-"
-                    + path[0].split("/")[-1].split(".")[0].split("-")[3]
-                )
-
-                model_kwargs = {}
-
-                sample_fn = (
-                    diffusion.p_sample_loop_known
-                    if not args.use_ddim
-                    else diffusion.ddim_sample_loop_known
-                )
-
-                sample, x_noisy, org = sample_fn(
-                    model,
-                    (out_batch.shape[0], 3, args.image_size, args.image_size),
-                    out_batch,
-                    clip_denoised=args.clip_denoised,
-                    model_kwargs=model_kwargs,
-                )
-
-                sa = sample.clone().detach()
-                sa = sa.squeeze(1)
-                sam = np.asarray(sa.detach().cpu())
-
-                su = 0
-                for s_sub_sub in s_sub:
-                    generated_3D[..., s_sub_sub] = sam[su, :, :]
-                    su += 1
-
-                nib.save(
-                    nib.Nifti1Image(generated_3D, None),
-                    (
-                        str(args.log_dir)
-                        + "/BraTS-GLI-"
-                        + str(p_s)
-                        + "-t1n-inference.nii.gz"
-                    ),
-                )
-
-            else:
-                for s in slicedict[b * batch_size_vol :]:
-                    out_batch.append(batch[..., s])
-
-                    s_sub.append(s)
-
-                out_batch = th.stack(out_batch)
-
-                out_batch = out_batch.squeeze(1)
-
-                out_batch = out_batch.squeeze(4)
-
-                c = th.randn_like(out_batch[:, :1, ...])
-
-                out_batch = th.cat((out_batch, c), dim=1)
-
-                p_s = (
-                    path[0].split("/")[-1].split(".")[0].split("-")[2]
-                    + "-"
-                    + path[0].split("/")[-1].split(".")[0].split("-")[3]
-                )
-
-                model_kwargs = {}
-
-                sample_fn = (
-                    diffusion.p_sample_loop_known
-                    if not args.use_ddim
-                    else diffusion.ddim_sample_loop_known
-                )
-
-                sample, x_noisy, org = sample_fn(
-                    model,
-                    (out_batch.shape[0], 3, args.image_size, args.image_size),
-                    out_batch,
-                    clip_denoised=args.clip_denoised,
-                    model_kwargs=model_kwargs,
-                )
-
-                sa = sample.clone().detach()
-                sa = sa.squeeze(1)
-                sam = np.asarray(sa.detach().cpu())
-
-                su = 0
-                for s_sub_sub in s_sub:
-                    generated_3D[..., s_sub_sub] = sam[su, :, :]
-                    su += 1
-
-                nib.save(
-                    nib.Nifti1Image(generated_3D, None),
-                    (
-                        str(args.log_dir)
-                        + "/BraTS-GLI-"
-                        + str(p_s)
-                        + "-t1n-inference.nii.gz"
-                    ),
-                )
-
-    if args.adapted_samples:
-        create_submission_adapted.adapt(
-            input_data=args.data_dir,
-            samples_dir=args.log_dir,
-            adapted_samples_dir=args.adapted_samples,
-        )
-    # eval_sam.eval_adapted_samples(dataset_path_eval=args.data_dir, solutionFilePaths_gt=args.gt_dir, resultsFolder_dir=args.adapted_samples)
-    logger.log("SAMPLING END " + str(today))
+    return model, diffusion
 
 
-def create_argparser():
-    defaults = dict(
-        data_dir="",
-        log_dir="",
-        # gt_dir="",
-        adapted_samples="",
-        sub_batch=16,
-        clip_denoised=True,
-        num_samples=1,
-        batch_size=1,
-        use_ddim=False,
-        model_path="",
-        num_ensemble=1,
+def main(
+    rank: int,
+    use_gpu: bool,
+    world_size: int,
+    args: dict,
+):
+    if args.get("output_dir"):
+        logger.configure(dir=args.get("output_dir"))
+    else:
+        logger.configure()
+
+    dist_util.setup_dist(rank, world_size)
+
+    # Set the device
+    if use_gpu:
+        device = th.device(f"cuda:{rank}")
+        th.cuda.set_device(device)
+    else:
+        device = th.device(f"cpu:{rank}")
+    
+    logger.info(f"Device: {device}")
+
+    actual_img_size = 224
+    model_img_size = 256
+    model, diffusion = get_model_and_diffusion(model_img_size)
+    model.to(device)
+
+    logger.info("Model and diffusion loaded")
+
+    brats23_mni_dataset = BRATSDataset(
+        "/scratch/santorum/bratsc2023-mni-dm-inpainting-preprocessed-3d/Training/",
+        test_flag=True
     )
-    defaults.update(model_and_diffusion_defaults())
-    parser = argparse.ArgumentParser()
-    add_dict_to_argparser(parser, defaults)
-    return parser
+
+    logger.log(f"Loaded {len(brats23_mni_dataset)} samples from BRATS23-MNI dataset")
+
+    sample_batch_2, sample_path_2, sample_slicedict_2 = brats23_mni_dataset[2]  # 140
+    sample_batch_4, sample_path_4, sample_slicedict_4 = brats23_mni_dataset[4]  # 125
+    sample_batch_5, sample_path_5, sample_slicedict_5 = brats23_mni_dataset[5]  # 110
+
+    train_batch_to_repaint = th.stack(
+        [
+            sample_batch_2[..., 140],
+            sample_batch_4[..., 125],
+            sample_batch_5[..., 110],
+        ],
+        dim=0,
+    )
+
+    inpainted_train_batch, x_noisy_train_batch, original_train_batch = diffusion.p_sample_loop_known(
+        model=model,
+        shape=(train_batch_to_repaint.shape[0], 3, model_img_size, model_img_size),
+        img=train_batch_to_repaint,
+        clip_denoised=True,
+        model_kwargs={},
+        progress=True,
+    )
+
+    inpainted_train_batch = inpainted_train_batch.cpu()
+    x_noisy_train_batch = x_noisy_train_batch.cpu()
+    original_train_batch = original_train_batch.cpu()
+
+    fig, ax = plt.subplots(
+        nrows=len(inpainted_train_batch),
+        ncols=5,
+        figsize=(15, 3.3*len(inpainted_train_batch)),
+        gridspec_kw={"width_ratios": [1, 1, 1, 1, 0.05]}
+    )
+
+    for i in range(len(inpainted_train_batch)):
+        _voided_t1_img = rotate(original_train_batch[i, 0, ...].view(actual_img_size, actual_img_size), angle=-90)
+        _ground_truth_img = rotate(original_train_batch[i, 2, ...].view(actual_img_size, actual_img_size), angle=-90)
+        _inpainted_img = rotate(inpainted_train_batch[i].view(actual_img_size, actual_img_size), angle=-90)
+        _diff_map_img = _inpainted_img - _ground_truth_img
+
+        ax[i][0].imshow(_voided_t1_img, cmap="gray")
+        ax[i][1].imshow(_ground_truth_img, cmap="gray")
+        ax[i][2].imshow(_inpainted_img, cmap="gray")
+        ax3_i = ax[i][3].imshow(_diff_map_img, norm=mpl.colors.CenteredNorm(), cmap="seismic")
+
+        fig.colorbar(ax3_i, ax=ax[i][3], cax=ax[i][4])
+
+        if i == 0:
+            ax[i][0].set_title("MNI Voided GT")
+            ax[i][1].set_title("MNI Ground-truth")
+            ax[i][2].set_title("Inpainted")
+            ax[i][3].set_title("Difference map")
+
+    plt.tight_layout()
+    os.makedirs("/scratch/santorum/inference/replic_durrer_inpaint_slicewise_mni/gpu", exist_ok=True)
+    plt.savefig(
+        "/scratch/santorum/inference/replic_durrer_inpaint_slicewise_mni/gpu/inpaint_on_training_samples.png",
+    )
 
 
 if __name__ == "__main__":
-    main()
+    main(rank=0, use_gpu=True, world_size=1, args={})

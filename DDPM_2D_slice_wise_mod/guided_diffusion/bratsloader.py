@@ -36,6 +36,11 @@ class BRATSDataset(torch.utils.data.Dataset):
                     for f in fi_sorted:
                         seqtype = f.split("-")[-1].split(".")[0]
                         datapoint[seqtype] = os.path.join(root, dir_id, f)
+                        ############################################################
+                        if "BraTS-GLI-0166" in f and not self.test_flag:  # NEW
+                            print(f"Ignoring {f} to use in Validation ...")
+                            continue
+                        ############################################################
                         if seqtype == "mask":
                             slice_range = []
                             mask_to_define_rand = np.array(

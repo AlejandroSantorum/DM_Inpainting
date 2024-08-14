@@ -38,8 +38,8 @@ def setup_dist(rank, world_size):
     else:
         hostname = socket.gethostbyname(socket.getfqdn())
     
-    os.environ["MASTER_ADDR"] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ['MASTER_PORT'] = f"1234{rank}"
 
     dist.init_process_group(backend='gloo', rank=rank, world_size=world_size)
 
