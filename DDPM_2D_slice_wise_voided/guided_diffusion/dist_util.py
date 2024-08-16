@@ -37,7 +37,7 @@ def setup_dist(rank, world_size):
         hostname = "localhost"
     else:
         hostname = socket.gethostbyname(socket.getfqdn())
-
+    
     visible_devices_str = os.environ.get("CUDA_VISIBLE_DEVICES", "")
     if visible_devices_str:
         port_suffix = visible_devices_str.split(",")[0]
