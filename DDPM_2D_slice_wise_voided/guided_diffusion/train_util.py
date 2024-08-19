@@ -214,6 +214,7 @@ class TrainLoop:
             i += 1
 
             if self.step % self.log_interval == 0:
+                logger.log(f"Logging metrics at step {self.step + self.resume_step} ...")
                 logger.dumpkvs()
             if self.step % self.save_interval == 0:
                 self.save()
@@ -295,12 +296,13 @@ class TrainLoop:
         def save_checkpoint(rate, params):
             state_dict = self.mp_trainer.master_params_to_state_dict(params)
             if dist.get_rank() == 0:
-                logger.log(f"saving model {rate}...")
+                save_step = self.step + self.resume_step
+                logger.log(f"Saving model {rate} at step {save_step}...")
                 if not rate:
-                    filename = f"savedmodel{(self.step+self.resume_step):06d}.pt"
+                    filename = f"savedmodel{(save_step):06d}.pt"
                 else:
                     filename = (
-                        f"emasavedmodel_{rate}_{(self.step+self.resume_step):06d}.pt"
+                        f"emasavedmodel_{rate}_{(save_step):06d}.pt"
                     )
                 with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
                     th.save(state_dict, f)
