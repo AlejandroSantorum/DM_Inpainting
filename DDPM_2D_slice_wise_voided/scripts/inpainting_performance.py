@@ -51,8 +51,8 @@ def main(
     args: dict,
 ):
     # Configure the logger
-    if args.get("output_dir"):
-        logger.configure(dir=args.get("output_dir"))
+    if args.output_dir:
+        logger.configure(dir=args.output_dir)
     else:
         logger.configure()
     
@@ -94,6 +94,9 @@ def main(
     # Load the dataset
     brats_dataset = BRATSDataset(args.data_dir, test_flag=True)
 
+    if len(brats_dataset) == 0:
+        raise ValueError(f"No samples found in the dataset in {args.data_dir}")
+
     logger.info(f"Loaded {len(brats_dataset)} samples from BRATS dataset")
 
     # Lists to store the performance metrics
@@ -110,7 +113,7 @@ def main(
         num_p_sample_loop_iters = math.ceil(len(slicedict_i) / args.sample_batch_size)
 
         for j in range(num_p_sample_loop_iters):
-            logger.info(f"Processing batch no. {j + 1} of {num_p_sample_loop_iters} ...")
+            logger.info(f"\tProcessing batch no. {j + 1} of {num_p_sample_loop_iters} ...")
 
             # get the indices for the current batch
             start_idx = j * args.sample_batch_size
@@ -120,7 +123,7 @@ def main(
             # get the batch of images to inpaint based on the slice indices
             batch_i_j = batch_i[:,:,:,slicedict_i_j]
             # permute the dimensions to match the model's input shape (batch size, channels, height, width)
-            batch_i_j = torch.permute(batch_i_j, (0, 3, 1, 2))
+            batch_i_j = torch.permute(batch_i_j, (3, 0, 1, 2))
 
             # perform inpainting on the current batch of images using the DDPM model
             inpainted_batch_i_j, x_noisy_batch_i_j, original_batch_i_j = diffusion.p_sample_loop_known(
