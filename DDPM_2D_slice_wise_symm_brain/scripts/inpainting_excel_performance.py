@@ -185,7 +185,7 @@ def main(
     performance_metrics_df = pd.DataFrame(performance_metrics)
     checkpoint_name = os.path.basename(args.model_pt_path).replace(".pt", "")
     performance_metrics_df.to_excel(
-        os.path.join(args.output_dir, f"performance_metrics_{checkpoint_name}.xlsx")
+        os.path.join(args.model_pt_path, f"performance_metrics_{checkpoint_name}.xlsx")
     )
 
 
