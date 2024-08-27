@@ -1,13 +1,21 @@
-import torch
-import math
 import os
+import math
+import random
+import torch
 
 from guided_diffusion import dist_util, logger
 from guided_diffusion.bratsloader import BRATSDataset
 from guided_diffusion.script_util import create_model_and_diffusion
 
+import numpy as np
 from utils.metrics import mse_2d, snr_2d, psnr_2d
 from skimage.metrics import structural_similarity
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
 
 def get_model_and_diffusion(model_image_size: int, model_pt_path: str):
@@ -171,6 +179,8 @@ def main(
 
 if __name__ == "__main__":
     import argparse
+
+    set_seed(0)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str)
