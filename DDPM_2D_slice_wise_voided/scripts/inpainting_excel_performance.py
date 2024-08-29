@@ -167,18 +167,18 @@ def main(
                 psnr_list.append(psnr_k)
                 ssim_list.append(ssim_k)
 
-    # Calculate the average performance metrics
-    avg_mse = sum(mse_list) / len(mse_list)
-    avg_snr = sum(snr_list) / len(snr_list)
-    avg_psnr = sum(psnr_list) / len(psnr_list)
-    avg_ssim = sum(ssim_list) / len(ssim_list)
+    # Calculate the performance metrics
+    mse_list = np.array(mse_list)
+    snr_list = np.array(snr_list)
+    psnr_list = np.array(psnr_list)
+    ssim_list = np.array(ssim_list)
 
     logger.info("====================================")
     logger.info("Performance Metrics:")
-    logger.info(f"Average MSE: {avg_mse}")
-    logger.info(f"Average SNR: {avg_snr}")
-    logger.info(f"Average PSNR: {avg_psnr}")
-    logger.info(f"Average SSIM: {avg_ssim}")
+    logger.info(f"MSE: {np.mean(mse_list)} ± {np.std(mse_list)}")
+    logger.info(f"SNR: {np.mean(snr_list)} ± {np.std(snr_list)}")
+    logger.info(f"PSNR: {np.mean(psnr_list)} ± {np.std(psnr_list)}")
+    logger.info(f"SSIM: {np.mean(ssim_list)} ± {np.std(ssim_list)}")
     logger.info("====================================")
 
     # Save the performance metrics to a Excel file
