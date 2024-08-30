@@ -51,8 +51,15 @@ def train_model(
         args.schedule_sampler, diffusion, maxt=1000
     )
 
-    logger.log(f"creating data loader with data_dir '{args.data_dir}'")
-    ds = BRATSDataset(args.data_dir, test_flag=False)
+    if args.seqtypes is not None:
+        # seqtypes example: "voided,mask,t1n"
+        override_seqtypes = args.seqtypes.split(",")
+        logger.log("Overriding seqtypes to: " + str(override_seqtypes))
+    else:
+        override_seqtypes = None
+
+    logger.log(f"Creating data loader with data_dir '{args.data_dir}'")
+    ds = BRATSDataset(args.data_dir, test_flag=False, override_seqtypes=override_seqtypes)
 
     # Create a distributed sampler
     sampler = DistributedSampler(ds, num_replicas=world_size, rank=rank)
@@ -111,6 +118,7 @@ def create_argparser():
     defaults = dict(
         data_dir="",
         output_dir="",  # NOTE: Added by Santorum
+        seqtypes=None,  # NOTE: Added by Santorum
         schedule_sampler="uniform",
         lr=1e-4,
         weight_decay=0.0,
