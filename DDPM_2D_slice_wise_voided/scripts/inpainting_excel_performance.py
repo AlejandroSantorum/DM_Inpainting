@@ -100,8 +100,18 @@ def main(
     model.to(device)
     logger.info("Model and diffusion loaded")
 
+    if args.seqtypes is not None:
+        # seqtypes example: "voided,mask,t1n"
+        override_seqtypes = args.seqtypes.split(",")
+        logger.log("Overriding seqtypes to: " + str(override_seqtypes))
+    else:
+        override_seqtypes = None
+
     # Load the dataset
-    brats_dataset = BRATSDataset(args.data_dir, test_flag=True)
+    logger.log(f"Creating data loader with data_dir '{args.data_dir}'")
+    brats_dataset = BRATSDataset(
+        args.data_dir, test_flag=True, override_seqtypes=override_seqtypes
+    )
 
     if len(brats_dataset) == 0:
         raise ValueError(f"No samples found in the dataset in {args.data_dir}")
@@ -212,6 +222,7 @@ if __name__ == "__main__":
     parser.add_argument("--actual_image_size", type=int)
     parser.add_argument("--sample_batch_size", type=int, default=4)
     parser.add_argument("--output_dir", type=str, default=None)
+    parser.add_argument("--seqtypes", type=str, default=None)
 
     args = parser.parse_args()
 

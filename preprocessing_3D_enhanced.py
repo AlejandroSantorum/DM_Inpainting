@@ -1,4 +1,5 @@
 import os
+import argparse
 import numpy as np
 from scipy.ndimage import rotate
 import nibabel as nib
@@ -151,6 +152,13 @@ def process_images(input_folder, output_folder, seed=42):
 
 
 if __name__ == '__main__':
-    input_folder = "/scratch/santorum/bratsc2023-mni/Training"
-    output_folder = "/scratch/santorum/data/bratsc2023-mni-dm-inpainting-preprocessed-3d/Training"
-    process_images(input_folder, output_folder)
+    argparser = argparse.ArgumentParser()
+
+    argparser.add_argument("--input_folder", type=str, required=True)
+    argparser.add_argument("--output_folder", type=str, required=True)
+
+    args = argparser.parse_args()
+
+    # input_folder = "/scratch/santorum/bratsc2023-mni/Training"
+    # output_folder = "/scratch/santorum/data/bratsc2023-mni-dm-inpainting-preprocessed-3d/Training"
+    process_images(input_folder=args.input_folder, output_folder=args.output_folder)
