@@ -573,8 +573,9 @@ class GaussianDiffusion:
             imarr = np.asarray(img.cpu().detach())
 
             with th.no_grad():
-                if img.shape != (imarr.shape[0], 3, 224, 224):  # this is the original line
+                # if img.shape != (imarr.shape[0], 3, 224, 224):  # this is the original line
                 # if img.shape != (imarr.shape[0], 3, model.image_size, model.image_size):
+                if img.shape != (imarr.shape[0], model.in_channels, 224, 224):
                     # in every step, make sure to concatenate the original image to the sampled segmentation mask
                     img = torch.cat((org_MRI, img), dim=1)
 
