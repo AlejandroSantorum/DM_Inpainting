@@ -173,12 +173,21 @@ def main(
     psnr_list = np.array(psnr_list)
     ssim_list = np.array(ssim_list)
 
+    logger.info(f"Dropping {np.sum(np.isnan(mse_list))} NaN values from MSE array")
+    pr_mse_list = mse_list[~np.isnan(mse_list)]
+    logger.info(f"Dropping {np.sum(np.isnan(snr_list))} NaN values from SNR array")
+    pr_snr_list = snr_list[~np.isnan(snr_list)]
+    logger.info(f"Dropping {np.sum(np.isnan(psnr_list))} NaN values from PSNR array")
+    pr_psnr_list = psnr_list[~np.isnan(psnr_list)]
+    logger.info(f"Dropping {np.sum(np.isnan(ssim_list))} NaN values from SSIM array")
+    pr_ssim_list = ssim_list[~np.isnan(ssim_list)]
+
     logger.info("====================================")
     logger.info("Performance Metrics:")
-    logger.info(f"MSE: {np.mean(mse_list)} ± {np.std(mse_list)}")
-    logger.info(f"SNR: {np.mean(snr_list)} ± {np.std(snr_list)}")
-    logger.info(f"PSNR: {np.mean(psnr_list)} ± {np.std(psnr_list)}")
-    logger.info(f"SSIM: {np.mean(ssim_list)} ± {np.std(ssim_list)}")
+    logger.info(f"MSE: {np.mean(pr_mse_list)} ± {np.std(pr_mse_list)}")
+    logger.info(f"SNR: {np.mean(pr_snr_list)} ± {np.std(pr_snr_list)}")
+    logger.info(f"PSNR: {np.mean(pr_psnr_list)} ± {np.std(pr_psnr_list)}")
+    logger.info(f"SSIM: {np.mean(pr_ssim_list)} ± {np.std(pr_ssim_list)}")
     logger.info("====================================")
 
     # Save the performance metrics to a Excel file
