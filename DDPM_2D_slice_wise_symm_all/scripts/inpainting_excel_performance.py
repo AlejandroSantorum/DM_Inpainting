@@ -3,6 +3,8 @@ import math
 import random
 import torch
 import pandas as pd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 from guided_diffusion import dist_util, logger
 from guided_diffusion.bratsloader import BRATSDataset
@@ -51,6 +53,38 @@ def get_model_and_diffusion(model_image_size: int, model_pt_path: str):
         model_data = torch.load(f, map_location="cpu")
     model.load_state_dict(model_data)
     return model, diffusion
+
+
+def plot_save_slices(
+    original_batch: torch.Tensor,
+    inpainted_batch: torch.Tensor,
+    actual_img_size: int,
+    slice_indices: list,
+    subject_name: str,
+    output_dir: str,
+):
+    # Plot the original and inpainted slices
+    for i in range(inpainted_batch.shape[0]):
+        n_figs = original_batch.shape[1] + 2 # channels, inpainted, diff map
+        width_ratios = ([1] * n_figs) + [0.05]
+        fig, axs = plt.subplots(1, n_figs+1, figsize=(3*n_figs, 3.5), gridspec_kw={"width_ratios": width_ratios})
+        for k in range(original_batch.shape[1]):
+            _img_show = original_batch[i,k,...].view(actual_img_size, actual_img_size).numpy()
+            axs[k].imshow(_img_show, cmap="gray")
+            axs[k].set_title(f"Channel {k}")
+        
+        inpainted_img = inpainted_batch[i].view(actual_img_size, actual_img_size).numpy()
+        axs[-3].imshow(inpainted_img, cmap="gray")
+        axs[-3].set_title("Inpainted")
+
+        groundtruth_img = original_batch[i,-1,...].view(actual_img_size, actual_img_size).numpy()
+        diff_map = inpainted_img - groundtruth_img
+        ax_cb = axs[-2].imshow(diff_map, norm=mpl.colors.CenteredNorm(), cmap="seismic")
+        axs[-2].set_title("Diff Map")
+
+        fig.colorbar(ax_cb, ax=axs[-2], cax=axs[-1])
+
+        plt.savefig(os.path.join(output_dir, f"{subject_name}_slice_{slice_indices[i]}.png"))
 
 
 def main(
@@ -150,6 +184,18 @@ def main(
             x_noisy_batch_i_j = x_noisy_batch_i_j.cpu()
             original_batch_i_j = original_batch_i_j.cpu()
 
+            # Save the inpainted and original slices
+            if args.png_output_dir:
+                os.makedirs(args.png_output_dir, exist_ok=True)
+                plot_save_slices(
+                    original_batch=original_batch_i_j,
+                    inpainted_batch=inpainted_batch_i_j,
+                    actual_img_size=args.actual_image_size,
+                    slice_indices=slicedict_i_j,
+                    subject_name=os.path.basename(path_i).replace(".nii.gz", ""),
+                    output_dir=args.png_output_dir,
+                )
+
             # calculate the performance metrics for the inpainted images
             for k in range(inpainted_batch_i_j.shape[0]):
                 inpainted_slice_k = inpainted_batch_i_j[k].view(args.actual_image_size, args.actual_image_size).numpy()
@@ -221,6 +267,7 @@ if __name__ == "__main__":
     parser.add_argument("--actual_image_size", type=int)
     parser.add_argument("--sample_batch_size", type=int, default=4)
     parser.add_argument("--output_dir", type=str, default=None)
+    parser.add_argument("--png_output_dir", type=str, default=None)
 
     args = parser.parse_args()
 
