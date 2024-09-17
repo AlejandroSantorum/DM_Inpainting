@@ -10,17 +10,17 @@ import torch.nn
 
 
 class BRATSDataset(torch.utils.data.Dataset):
-    def __init__(self, directory, test_flag=True):
+    def __init__(self, directory, test_flag=True, override_seqtypes=None, ref_mask="mask"):
         super().__init__()
         self.directory = os.path.expanduser(directory)
 
         self.test_flag = test_flag
         if test_flag:
             # Originally: self.seqtypes = ["voided", "mask"]
-            self.seqtypes = ["healthy-voided", "mask", "symm-healthy-mask", "t1n"]
+            self.seqtypes = override_seqtypes or ["healthy-voided", "mask", "symm-healthy-mask", "t1n"]
         else:
             # Originally: self.seqtypes = ["diseased", "mask", "healthy"]
-            self.seqtypes = ["healthy-voided", "mask", "symm-healthy-mask", "t1n"]
+            self.seqtypes = override_seqtypes or ["healthy-voided", "mask", "symm-healthy-mask", "t1n"]
 
         self.seqtypes_set = set(self.seqtypes)
         self.database = []
@@ -42,10 +42,10 @@ class BRATSDataset(torch.utils.data.Dataset):
                             print(f"Ignoring {f} to use in Validation ...")
                             continue
                         ############################################################
-                        if seqtype == "mask":
+                        if seqtype == ref_mask:
                             slice_range = []
                             mask_to_define_rand = np.array(
-                                nibabel.load(datapoint["mask"]).dataobj
+                                nibabel.load(datapoint[ref_mask]).dataobj
                             )
                             for i in range(0, 224):
                                 mask_slice = mask_to_define_rand[:, :, i]

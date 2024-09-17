@@ -78,13 +78,12 @@ def process_images(input_folder, output_folder, seed=42):
 
     for subdir, _, files in os.walk(input_folder):
         t1n_files = [f for f in files if f.endswith('t1n.nii.gz')] # t1 image
-        healthy_files = [f for f in files if f.endswith('healthy.nii.gz')] # healthy mask
 
         for t1n_file in t1n_files:
             print(f"Processing {t1n_file}...")
             t1n_path = os.path.join(subdir, t1n_file)
-            healthy_mask_path = os.path.join(subdir, t1n_file.replace('t1n', 'mask-healthy'))
-            unhealthy_mask_path = os.path.join(subdir, t1n_file.replace('t1n', 'mask-unhealthy'))
+            healthy_mask_path = os.path.join(subdir, t1n_file.replace('t1n', 'mask-healthy')) # healthy mask
+            unhealthy_mask_path = os.path.join(subdir, t1n_file.replace('t1n', 'mask-unhealthy')) # unhealthy mask
 
             # Load images
             t1n_image = nib.load(t1n_path).get_fdata()
@@ -151,6 +150,54 @@ def process_images(input_folder, output_folder, seed=42):
             nib.save(nib.Nifti1Image(symmetrized_healthy_mask_image, np.eye(4)), symmetrized_healthy_mask_image_path)
 
 
+def process_symm_unhealhty_mask(input_folder, output_folder, seed=42):
+    np.random.seed(seed)
+    target_shape = (224, 224, 224)
+
+    for subdir, _, files in os.walk(input_folder):
+        t1n_files = [f for f in files if f.endswith('t1n.nii.gz')] # t1 image
+
+        for t1n_file in t1n_files:
+            print(f"Processing {t1n_file}...")
+            t1n_path = os.path.join(subdir, t1n_file)
+            unhealthy_mask_path = os.path.join(subdir, t1n_file.replace('t1n', 'mask-unhealthy')) # unhealthy mask
+
+            # Load images
+            t1n_image = nib.load(t1n_path).get_fdata()
+            unhealthy_mask_image = nib.load(unhealthy_mask_path).get_fdata()
+
+            # NEW: Rotate images in the axial plane
+            t1n_image = rotate(t1n_image, axes=(1,0), angle=90)
+            unhealthy_mask_image = rotate(unhealthy_mask_image, axes=(1,0), angle=90)       
+
+            # Clipping
+            t1n_image = np.clip(t1n_image, np.quantile(t1n_image, 0.001), np.quantile(t1n_image, 0.999))
+
+            # Normalize images between 0 and 1
+            t1n_image = normalize_image(t1n_image)
+            unhealthy_mask_image = normalize_image(unhealthy_mask_image)
+
+            # Crop or pad images to [224, 224, 224]
+            t1n_image = crop_or_pad_image(t1n_image, target_shape)
+            unhealthy_mask_image = crop_or_pad_image(unhealthy_mask_image, target_shape)
+
+            # Make sure masks are binary masks
+            unhealthy_mask_image = np.round(unhealthy_mask_image)
+
+            # Create corresponding subdir in output folder
+            relative_subdir = os.path.relpath(subdir, input_folder)
+            output_subdir = os.path.join(output_folder, relative_subdir)
+            os.makedirs(output_subdir, exist_ok=True)
+
+            # Symmetrize the images
+            symmetrized_unhealthy_mask_image = unhealthy_mask_image * t1n_image[:,::-1]
+
+            # Save the symmetrized images
+            symmetrized_unhealthy_mask_image_path = os.path.join(output_subdir, t1n_file.replace('t1n', 'symm-unhealthy-mask'))
+            nib.save(nib.Nifti1Image(symmetrized_unhealthy_mask_image, np.eye(4)), symmetrized_unhealthy_mask_image_path)
+
+
+
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
 
@@ -161,4 +208,5 @@ if __name__ == '__main__':
 
     # input_folder = "/scratch/santorum/bratsc2023-mni/Training"
     # output_folder = "/scratch/santorum/data/bratsc2023-mni-dm-inpainting-preprocessed-3d/Training"
-    process_images(input_folder=args.input_folder, output_folder=args.output_folder)
+    #TODO: process_images(input_folder=args.input_folder, output_folder=args.output_folder)
+    process_symm_unhealhty_mask(input_folder=args.input_folder, output_folder=args.output_folder)

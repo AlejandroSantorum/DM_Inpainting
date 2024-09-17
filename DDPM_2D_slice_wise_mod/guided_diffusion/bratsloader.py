@@ -10,17 +10,17 @@ import torch.nn
 
 
 class BRATSDataset(torch.utils.data.Dataset):
-    def __init__(self, directory, test_flag=True):
+    def __init__(self, directory, test_flag=True, override_seqtypes=None, ref_mask="mask"):
         super().__init__()
         self.directory = os.path.expanduser(directory)
 
         self.test_flag = test_flag
         if test_flag:
             # Originally: self.seqtypes = ["voided", "mask"]
-            self.seqtypes = ["voided", "mask", "t1n"]
+            self.seqtypes = override_seqtypes or ["voided", "mask", "t1n"]
         else:
             # Originally: self.seqtypes = ["diseased", "mask", "healthy"]
-            self.seqtypes = ["voided", "mask", "t1n"]
+            self.seqtypes = override_seqtypes or ["voided", "mask", "t1n"]
 
         self.seqtypes_set = set(self.seqtypes)
         self.database = []
@@ -34,26 +34,19 @@ class BRATSDataset(torch.utils.data.Dataset):
                     fi_sorted = sorted(fi)
                     # print(fi_sorted)
                     for f in fi_sorted:
-                        seqtype = f.split("-")[-1].split(".")[0]
+                        # Original: seqtype = f.split("-")[-1].split(".")[0]
+                        seqtype = f[f.find(dir_id)+len(dir_id)+1:f.rfind(".nii.gz")]
                         datapoint[seqtype] = os.path.join(root, dir_id, f)
                         ############################################################
                         if "BraTS-GLI-0166" in f and not self.test_flag:  # NEW
                             print(f"Ignoring {f} to use in Validation ...")
                             continue
                         ############################################################
-                        if seqtype == "mask":
+                        if seqtype == ref_mask:
                             slice_range = []
                             mask_to_define_rand = np.array(
-                                nibabel.load(datapoint["mask"]).dataobj
+                                nibabel.load(datapoint[ref_mask]).dataobj
                             )
-                            ############################################################
-                            # Originally:
-                            # if test_flag:
-                            #     mask_to_define_rand = np.pad(
-                            #         mask_to_define_rand, ((0, 0), (0, 0), (34, 35))
-                            #     )
-                            #     mask_to_define_rand = mask_to_define_rand[8:-8, 8:-8, :]
-                            ############################################################
                             for i in range(0, 224):
                                 mask_slice = mask_to_define_rand[:, :, i]
                                 if np.sum(mask_slice) != 0:
