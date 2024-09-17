@@ -79,6 +79,8 @@ def main(
 
     logger.info(f"Input Arguments: {args}")
 
+    set_seed(0)
+
     # Set the distributed configuration
     dist_util.setup_dist(rank, world_size)
 
@@ -212,8 +214,6 @@ def main(
 
 if __name__ == "__main__":
     import argparse
-
-    set_seed(0)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str)
