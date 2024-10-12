@@ -64,6 +64,8 @@ def main(
     else:
         logger.configure()
     
+    set_seed(0)
+    
     # Check if the required arguments are present
     if "data_dir" not in args:
         raise ValueError("data_dir not found in args")
@@ -100,7 +102,14 @@ def main(
     logger.info("Model and diffusion loaded")
 
     # Load the dataset
-    brats_dataset = BRATSDataset(args.data_dir, test_flag=True)
+    brats_dataset = BRATSDataset(
+        args.data_dir,
+        test_flag=True,
+        override_seqtypes=args.override_seqtypes.split(','),
+        ref_mask=args.ref_mask,
+        max_samples=args.max_samples,
+        seed=args.bratsloader_seed,
+    )
 
     if len(brats_dataset) == 0:
         raise ValueError(f"No samples found in the dataset in {args.data_dir}")
@@ -112,10 +121,10 @@ def main(
 
     for i in range(len(brats_dataset)):
         filedict_i = brats_dataset.database[i]
-        if "BraTS-GLI-0166" not in filedict_i["t1n"]:
-            continue
-        
-        logger.info(f"Inpainting slices of {os.path.basename(filedict_i['t1n']).replace('.nii.gz', '')}")
+        # if "BraTS-GLI-0166" not in filedict_i["t1n"]:
+        #     continue
+
+        logger.info(f"Inpainting slices of image no. {i + 1} ...")
         batch_i, path_i, slicedict_i = brats_dataset[i]
 
         num_p_sample_loop_iters = math.ceil(len(slicedict_i) / args.sample_batch_size)
@@ -162,25 +171,39 @@ def main(
                 psnr_list.append(psnr_k)
                 ssim_list.append(ssim_k)
 
-    # Calculate the average performance metrics
-    avg_mse = sum(mse_list) / len(mse_list)
-    avg_snr = sum(snr_list) / len(snr_list)
-    avg_psnr = sum(psnr_list) / len(psnr_list)
-    avg_ssim = sum(ssim_list) / len(ssim_list)
+    # Calculate the performance metrics
+    mse_list = np.array(mse_list)
+    snr_list = np.array(snr_list)
+    psnr_list = np.array(psnr_list)
+    ssim_list = np.array(ssim_list)
+
+    logger.info(f"Dropping {np.sum(np.isnan(mse_list))} NaN values from MSE array")
+    pr_mse_list = mse_list[~np.isnan(mse_list)]
+    logger.info(f"Dropping {np.sum(np.isnan(snr_list))} NaN values from SNR array")
+    pr_snr_list = snr_list[~np.isnan(snr_list)]
+    logger.info(f"Dropping {np.sum(np.isnan(psnr_list))} NaN values from PSNR array")
+    pr_psnr_list = psnr_list[~np.isnan(psnr_list)]
+    logger.info(f"Dropping {np.sum(np.isnan(ssim_list))} NaN values from SSIM array")
+    pr_ssim_list = ssim_list[~np.isnan(ssim_list)]
 
     logger.info("====================================")
-    logger.info("Performance Metrics:")
-    logger.info(f"Average MSE: {avg_mse}")
-    logger.info(f"Average SNR: {avg_snr}")
-    logger.info(f"Average PSNR: {avg_psnr}")
-    logger.info(f"Average SSIM: {avg_ssim}")
+    logger.info("Mean Performance Metrics:")
+    logger.info(f"MSE: {np.mean(pr_mse_list)} ± {np.std(pr_mse_list)}")
+    logger.info(f"SNR: {np.mean(pr_snr_list)} ± {np.std(pr_snr_list)}")
+    logger.info(f"PSNR: {np.mean(pr_psnr_list)} ± {np.std(pr_psnr_list)}")
+    logger.info(f"SSIM: {np.mean(pr_ssim_list)} ± {np.std(pr_ssim_list)}")
+    logger.info("====================================")
+    logger.info("Quantiles of Performance Metrics:")
+    for quantile in [0.25, 0.5, 0.75]:
+        logger.info(f"MSE {quantile}: {np.quantile(pr_mse_list, quantile)}")
+        logger.info(f"SNR {quantile}: {np.quantile(pr_snr_list, quantile)}")
+        logger.info(f"PSNR {quantile}: {np.quantile(pr_psnr_list, quantile)}")
+        logger.info(f"SSIM {quantile}: {np.quantile(pr_ssim_list, quantile)}")
     logger.info("====================================")
 
 
 if __name__ == "__main__":
     import argparse
-
-    set_seed(0)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str)
@@ -189,6 +212,10 @@ if __name__ == "__main__":
     parser.add_argument("--actual_image_size", type=int)
     parser.add_argument("--sample_batch_size", type=int, default=4)
     parser.add_argument("--output_dir", type=str, default=None)
+    parser.add_argument("--override_seqtypes", type=str, default=None)
+    parser.add_argument("--ref_mask", type=str, default="mask")
+    parser.add_argument("--max_samples", type=int, default=None)
+    parser.add_argument("--bratsloader_seed", type=int, default=None)
 
     args = parser.parse_args()
 

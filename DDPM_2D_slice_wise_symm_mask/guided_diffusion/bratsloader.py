@@ -1,4 +1,3 @@
-import math
 import os
 import os.path
 
@@ -10,7 +9,15 @@ import torch.nn
 
 
 class BRATSDataset(torch.utils.data.Dataset):
-    def __init__(self, directory, test_flag=True, override_seqtypes=None, ref_mask="mask"):
+    def __init__(
+        self,
+        directory,
+        test_flag=True,
+        override_seqtypes=None,
+        ref_mask="mask",
+        max_samples=None,
+        seed=None,
+    ):
         super().__init__()
         self.directory = os.path.expanduser(directory)
 
@@ -21,12 +28,27 @@ class BRATSDataset(torch.utils.data.Dataset):
         else:
             # Originally: self.seqtypes = ["diseased", "mask", "healthy"]
             self.seqtypes = override_seqtypes or ["healthy-voided", "symm-healthy-mask", "t1n"]
+        
+        if seed is not None:
+            np.random.seed(int(seed))
+            torch.manual_seed(int(seed))
 
         self.seqtypes_set = set(self.seqtypes)
         self.database = []
         self.mask_vis = []
         for root, dirs, files in os.walk(self.directory):
             dirs_sorted = sorted(dirs)
+            ############################################################
+            # NEW
+            if seed is not None:
+                np.random.shuffle(dirs_sorted)
+            if max_samples is not None:
+                print(f"Considering only {max_samples} samples ...")
+                if test_flag:
+                    dirs_sorted = dirs_sorted[-int(max_samples):] # using the last 'max_samples' samples
+                else:
+                    dirs_sorted = dirs_sorted[:int(max_samples)] # using the first 'max_samples' samples
+            ############################################################
             for dir_id in dirs_sorted:
                 datapoint = dict()
                 sli_dict = dict()
