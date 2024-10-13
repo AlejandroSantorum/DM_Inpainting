@@ -101,11 +101,18 @@ def main(
     model.to(device)
     logger.info("Model and diffusion loaded")
 
+    if args.override_seqtypes is not None:
+        # seqtypes example: "voided,mask,t1n"
+        override_seqtypes = args.override_seqtypes.split(",")
+        logger.log("Overriding seqtypes to: " + str(override_seqtypes))
+    else:
+        override_seqtypes = None
+
     # Load the dataset
     brats_dataset = BRATSDataset(
         args.data_dir,
         test_flag=True,
-        override_seqtypes=args.override_seqtypes.split(','),
+        override_seqtypes=override_seqtypes,
         ref_mask=args.ref_mask,
         max_samples=args.max_samples,
         seed=args.bratsloader_seed,

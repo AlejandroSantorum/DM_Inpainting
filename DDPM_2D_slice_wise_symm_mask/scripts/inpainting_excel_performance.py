@@ -136,8 +136,22 @@ def main(
     model.to(device)
     logger.info("Model and diffusion loaded")
 
+    if args.override_seqtypes is not None:
+        # seqtypes example: "voided,mask,t1n"
+        override_seqtypes = args.override_seqtypes.split(",")
+        logger.log("Overriding seqtypes to: " + str(override_seqtypes))
+    else:
+        override_seqtypes = None
+
     # Load the dataset
-    brats_dataset = BRATSDataset(args.data_dir, test_flag=True)
+    brats_dataset = BRATSDataset(
+        args.data_dir,
+        test_flag=True,
+        override_seqtypes=override_seqtypes,
+        ref_mask=args.ref_mask,
+        max_samples=args.max_samples,
+        seed=args.bratsloader_seed,
+    )
 
     if len(brats_dataset) == 0:
         raise ValueError(f"No samples found in the dataset in {args.data_dir}")
@@ -151,10 +165,10 @@ def main(
 
     for i in range(len(brats_dataset)):
         filedict_i = brats_dataset.database[i]
-        if "BraTS-GLI-0166" not in filedict_i["t1n"]:
-            continue
-        
-        logger.info(f"Inpainting slices of {os.path.basename(filedict_i['t1n']).replace('.nii.gz', '')}")
+        # if "BraTS-GLI-0166" not in filedict_i["t1n"]:
+        #     continue
+
+        logger.info(f"Inpainting slices of image no. {i + 1} ...")
         batch_i, path_i, slicedict_i = brats_dataset[i]
 
         num_p_sample_loop_iters = math.ceil(len(slicedict_i) / args.sample_batch_size)
@@ -237,6 +251,13 @@ def main(
     logger.info(f"PSNR: {np.mean(pr_psnr_list)} ± {np.std(pr_psnr_list)}")
     logger.info(f"SSIM: {np.mean(pr_ssim_list)} ± {np.std(pr_ssim_list)}")
     logger.info("====================================")
+    logger.info("Quantiles of Performance Metrics:")
+    for quantile in [0.25, 0.5, 0.75]:
+        logger.info(f"MSE {quantile}: {np.quantile(pr_mse_list, quantile)}")
+        logger.info(f"SNR {quantile}: {np.quantile(pr_snr_list, quantile)}")
+        logger.info(f"PSNR {quantile}: {np.quantile(pr_psnr_list, quantile)}")
+        logger.info(f"SSIM {quantile}: {np.quantile(pr_ssim_list, quantile)}")
+    logger.info("====================================")
 
     # Save the performance metrics to a Excel file
     performance_metrics = {
@@ -268,6 +289,10 @@ if __name__ == "__main__":
     parser.add_argument("--sample_batch_size", type=int, default=4)
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--png_output_dir", type=str, default=None)
+    parser.add_argument("--override_seqtypes", type=str, default=None)
+    parser.add_argument("--ref_mask", type=str, default="mask")
+    parser.add_argument("--max_samples", type=int, default=None)
+    parser.add_argument("--bratsloader_seed", type=int, default=None)
 
     args = parser.parse_args()
 
