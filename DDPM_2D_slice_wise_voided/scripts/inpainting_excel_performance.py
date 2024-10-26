@@ -171,6 +171,14 @@ def main(
                 inpainted_slice_k = inpainted_batch_i_j[k].view(args.actual_image_size, args.actual_image_size).numpy()
                 groundtruth_slice_k = original_batch_i_j[k,-1,...].view(args.actual_image_size, args.actual_image_size).numpy()
 
+                if args.npy_output_dir:
+                    os.makedirs(args.npy_output_dir, exist_ok=True)
+                    subject_name = os.path.basename(path_i).replace(".nii.gz", "")
+                    np.save(
+                        file=os.path.join(args.npy_output_dir, f"{subject_name}_slice_{slicedict_i_j[k]}.npy"),
+                        arr=inpainted_slice_k
+                    )
+
                 mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
                 snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
                 psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
@@ -230,6 +238,13 @@ def main(
             f"performance_metrics_{checkpoint_name}.xlsx"
         )
     )
+    if args.repo_results_dir:
+        performance_metrics_df.to_excel(
+            os.path.join(
+                args.repo_results_dir,
+                f"performance_metrics_{checkpoint_name}.xlsx"
+            )
+        )
 
 
 if __name__ == "__main__":
@@ -242,6 +257,8 @@ if __name__ == "__main__":
     parser.add_argument("--actual_image_size", type=int)
     parser.add_argument("--sample_batch_size", type=int, default=4)
     parser.add_argument("--output_dir", type=str, default=None)
+    parser.add_argument("--npy_output_dir", type=str, default=None)
+    parser.add_argument("--repo_results_dir", type=str, default=None)
     parser.add_argument("--override_seqtypes", type=str, default=None)
     parser.add_argument("--ref_mask", type=str, default="mask")
     parser.add_argument("--max_samples", type=int, default=None)

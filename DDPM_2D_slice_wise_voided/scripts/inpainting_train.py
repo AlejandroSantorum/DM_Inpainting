@@ -4,6 +4,7 @@ Train a diffusion model on images.
 import os
 import sys
 import argparse
+import random
 
 sys.path.append("..")
 sys.path.append(".")
@@ -17,9 +18,16 @@ from guided_diffusion.script_util import (
     args_to_dict,
     add_dict_to_argparser,
 )
+import numpy as np
 import torch as th
 from torch.utils.data.distributed import DistributedSampler
 from guided_diffusion.train_util import TrainLoop
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    th.manual_seed(seed)
 
 
 def train_model(
@@ -73,6 +81,9 @@ def train_model(
 
     datal = th.utils.data.DataLoader(ds, batch_size=args.batch_size, sampler=sampler)
     # data = iter(datal)
+
+    if args.training_seed is not None:
+        set_seed(int(args.training_seed))
 
     logger.log("Initiating training ...")
 
@@ -129,6 +140,7 @@ def create_argparser():
         ref_mask="mask",  # NOTE: Added by Santorum
         max_samples=None,  # NOTE: Added by Santorum
         bratsloader_seed=None,  # NOTE: Added by Santorum
+        training_seed=None,  # NOTE: Added by Santorum
         schedule_sampler="uniform",
         lr=1e-4,
         weight_decay=0.0,
@@ -137,7 +149,7 @@ def create_argparser():
         microbatch=-1,  # -1 disables microbatches
         ema_rate="0.9999",  # comma-separated list of EMA values
         log_interval=1000,
-        save_interval=5000,
+        save_interval=10000,
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
