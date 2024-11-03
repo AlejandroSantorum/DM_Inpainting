@@ -1,14 +1,17 @@
 import os
-import math
 import numpy as np
 import torch
 import random
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from typing import List, Dict
 
 from guided_diffusion import dist_util, logger
 from guided_diffusion.bratsloader import BRATSDataset
 from guided_diffusion.script_util import create_model_and_diffusion
+
+from utils.metrics import mse_2d, snr_2d, psnr_2d
+from skimage.metrics import structural_similarity
 
 
 def set_seed(seed):
@@ -58,16 +61,20 @@ def plot_save_slices(
     slice_indices: list,
     subject_name: str,
     output_dir: str,
+    perf_metrics: List[Dict] = None,
 ):
     # Plot the original and inpainted slices
     for i in range(inpainted_batch.shape[0]):
         n_figs = original_batch.shape[1] + 2 # channels, inpainted, diff map
         width_ratios = ([1] * n_figs) + [0.05]
-        fig, axs = plt.subplots(1, n_figs+1, figsize=(3*n_figs, 3.5), gridspec_kw={"width_ratios": width_ratios})
+        fig, axs = plt.subplots(1, n_figs+1, figsize=(3.8*n_figs, 3.8), gridspec_kw={"width_ratios": width_ratios})
         for k in range(original_batch.shape[1]):
             _img_show = original_batch[i,k,...].view(actual_img_size, actual_img_size).numpy()
             axs[k].imshow(_img_show, cmap="gray")
-            axs[k].set_title(f"Channel {k}")
+            if k == original_batch.shape[1]-1:
+                axs[k].set_title("Groundtruth")
+            else:
+                axs[k].set_title(f"Channel {k+1}")
         
         inpainted_img = inpainted_batch[i].view(actual_img_size, actual_img_size).numpy()
         axs[-3].imshow(inpainted_img, cmap="gray")
@@ -77,8 +84,11 @@ def plot_save_slices(
         diff_map = inpainted_img - groundtruth_img
         ax_cb = axs[-2].imshow(diff_map, norm=mpl.colors.CenteredNorm(), cmap="seismic")
         axs[-2].set_title("Diff Map")
-
         fig.colorbar(ax_cb, ax=axs[-2], cax=axs[-1])
+
+        if perf_metrics is not None:
+            title_msg = " | ".join(f"{k} = {v:.5f}" for k, v in perf_metrics[i].items())
+            plt.suptitle(title_msg)
 
         plt.savefig(os.path.join(output_dir, f"{subject_name}_slice_{slice_indices[i]}.png"))
 
@@ -176,6 +186,34 @@ def main(
         x_noisy_slice = x_noisy_slice.cpu()
         original_slice = original_slice.cpu()
 
+        mse_list_batch, snr_list_batch, psnr_list_batch, ssim_list_batch = [], [], [], []
+        for k in range(inpainted_slice.shape[0]):
+            inpainted_slice_k = inpainted_slice[k].view(args.actual_image_size, args.actual_image_size).numpy()
+            groundtruth_slice_k = original_slice[k,-1,...].view(args.actual_image_size, args.actual_image_size).numpy()
+
+            if args.npy_output_dir:
+                os.makedirs(os.path.join(args.npy_output_dir, "inpainted"), exist_ok=True)
+                os.makedirs(os.path.join(args.npy_output_dir, "groundtruth"), exist_ok=True)
+                subject_name = os.path.basename(path_i).replace(".nii.gz", "")
+                np.save(
+                    file=os.path.join(args.npy_output_dir, "inpainted", f"{subject_name}_slice_{slice_idx}.npy"),
+                    arr=inpainted_slice_k
+                )
+                np.save(
+                    file=os.path.join(args.npy_output_dir, "groundtruth", f"{subject_name}_slice_{slice_idx}.npy"),
+                    arr=groundtruth_slice_k
+                )
+
+            mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
+            snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
+            psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
+            ssim_k = structural_similarity(inpainted_slice_k, groundtruth_slice_k, data_range=1)
+
+            mse_list_batch.append(mse_k)
+            snr_list_batch.append(snr_k)
+            psnr_list_batch.append(psnr_k)
+            ssim_list_batch.append(ssim_k)
+
         # Save the inpainted and original slices
         if args.png_output_dir:
             os.makedirs(args.png_output_dir, exist_ok=True)
@@ -186,6 +224,15 @@ def main(
                 slice_indices=[slice_idx],
                 subject_name=os.path.basename(path_i).replace(".nii.gz", ""),
                 output_dir=args.png_output_dir,
+                perf_metrics=[
+                    {
+                        "MSE": mse_list_batch[k],
+                        "SNR": snr_list_batch[k],
+                        "PSNR": psnr_list_batch[k],
+                        "SSIM": ssim_list_batch[k]
+                    }
+                    for k in range(inpainted_slice.shape[0])
+                ],
             )
 
 
@@ -201,6 +248,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--sample_batch_size", type=int, default=4)
     parser.add_argument("--png_output_dir", type=str, default=None)
+    parser.add_argument("--npy_output_dir", type=str, default=None)
     parser.add_argument("--override_seqtypes", type=str, default=None)
     parser.add_argument("--ref_mask", type=str, default="mask")
     parser.add_argument("--max_samples", type=int, default=None)
@@ -215,12 +263,18 @@ if __name__ == "__main__":
 
     # image idx and slice idx to inpaint
     images_slices_to_inpaint = [
-        (2, 80),
-        (2, 110),
-        (3, 120),
-        (7, 140),
-        (8, 120),
-        (10, 120)
+        (0, 113),
+        (1, 125),
+        (2, 113),
+        (3, 123),
+        (4, 132),
+        (5, 120),
+        (6, 121),
+        (6, 124),
+        (7, 139),
+        (8, 141),
+        (9, 150),
+        (10, 119),
     ]
 
     if world_size > 0:

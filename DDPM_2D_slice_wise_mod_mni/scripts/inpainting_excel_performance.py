@@ -5,6 +5,7 @@ import torch
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from typing import List, Dict
 
 from guided_diffusion import dist_util, logger
 from guided_diffusion.bratsloader import BRATSDataset
@@ -62,16 +63,20 @@ def plot_save_slices(
     slice_indices: list,
     subject_name: str,
     output_dir: str,
+    perf_metrics: List[Dict] = None,
 ):
     # Plot the original and inpainted slices
     for i in range(inpainted_batch.shape[0]):
         n_figs = original_batch.shape[1] + 2 # channels, inpainted, diff map
         width_ratios = ([1] * n_figs) + [0.05]
-        fig, axs = plt.subplots(1, n_figs+1, figsize=(3*n_figs, 3.5), gridspec_kw={"width_ratios": width_ratios})
+        fig, axs = plt.subplots(1, n_figs+1, figsize=(3.8*n_figs, 3.8), gridspec_kw={"width_ratios": width_ratios})
         for k in range(original_batch.shape[1]):
             _img_show = original_batch[i,k,...].view(actual_img_size, actual_img_size).numpy()
             axs[k].imshow(_img_show, cmap="gray")
-            axs[k].set_title(f"Channel {k}")
+            if k == original_batch.shape[1]-1:
+                axs[k].set_title("Groundtruth")
+            else:
+                axs[k].set_title(f"Channel {k+1}")
         
         inpainted_img = inpainted_batch[i].view(actual_img_size, actual_img_size).numpy()
         axs[-3].imshow(inpainted_img, cmap="gray")
@@ -81,8 +86,11 @@ def plot_save_slices(
         diff_map = inpainted_img - groundtruth_img
         ax_cb = axs[-2].imshow(diff_map, norm=mpl.colors.CenteredNorm(), cmap="seismic")
         axs[-2].set_title("Diff Map")
-
         fig.colorbar(ax_cb, ax=axs[-2], cax=axs[-1])
+
+        if perf_metrics is not None:
+            title_msg = " | ".join(f"{k} = {v:.5f}" for k, v in perf_metrics[i].items())
+            plt.suptitle(title_msg)
 
         plt.savefig(os.path.join(output_dir, f"{subject_name}_slice_{slice_indices[i]}.png"))
 
@@ -200,18 +208,7 @@ def main(
             x_noisy_batch_i_j = x_noisy_batch_i_j.cpu()
             original_batch_i_j = original_batch_i_j.cpu()
 
-            # Save the inpainted and original slices
-            if args.png_output_dir:
-                os.makedirs(args.png_output_dir, exist_ok=True)
-                plot_save_slices(
-                    original_batch=original_batch_i_j,
-                    inpainted_batch=inpainted_batch_i_j,
-                    actual_img_size=args.actual_image_size,
-                    slice_indices=slicedict_i_j,
-                    subject_name=os.path.basename(path_i).replace(".nii.gz", ""),
-                    output_dir=args.png_output_dir,
-                )
-
+            mse_list_batch, snr_list_batch, psnr_list_batch, ssim_list_batch = [], [], [], []
             # calculate the performance metrics for the inpainted images
             for k in range(inpainted_batch_i_j.shape[0]):
                 inpainted_slice_k = inpainted_batch_i_j[k].view(args.actual_image_size, args.actual_image_size).numpy()
@@ -230,12 +227,40 @@ def main(
                 psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
                 ssim_k = structural_similarity(inpainted_slice_k, groundtruth_slice_k, data_range=1)
 
+                mse_list_batch.append(mse_k)
+                snr_list_batch.append(snr_k)
+                psnr_list_batch.append(psnr_k)
+                ssim_list_batch.append(ssim_k)
+
+
                 subject_names.append(os.path.basename(path_i).replace(".nii.gz", ""))
                 slice_indices.append(slicedict_i_j[k])
-                mse_list.append(mse_k)
-                snr_list.append(snr_k)
-                psnr_list.append(psnr_k)
-                ssim_list.append(ssim_k)
+            
+            mse_list.extend(mse_list_batch)
+            snr_list.extend(snr_list_batch)
+            psnr_list.extend(psnr_list_batch)
+            ssim_list.extend(ssim_list_batch)
+
+            # Save the inpainted and original slices
+            if args.png_output_dir:
+                os.makedirs(args.png_output_dir, exist_ok=True)
+                plot_save_slices(
+                    original_batch=original_batch_i_j,
+                    inpainted_batch=inpainted_batch_i_j,
+                    actual_img_size=args.actual_image_size,
+                    slice_indices=slicedict_i_j,
+                    subject_name=os.path.basename(path_i).replace(".nii.gz", ""),
+                    output_dir=args.png_output_dir,
+                    perf_metrics=[
+                        {
+                            "MSE": mse_list_batch[k],
+                            "SNR": snr_list_batch[k],
+                            "PSNR": psnr_list_batch[k],
+                            "SSIM": ssim_list_batch[k],
+                        }
+                        for k in range(len(slicedict_i_j))
+                    ]
+                )
 
     # Calculate the performance metrics
     mse_list = np.array(mse_list)
