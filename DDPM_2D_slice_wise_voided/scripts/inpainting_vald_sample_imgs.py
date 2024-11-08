@@ -190,6 +190,7 @@ def main(
         for k in range(inpainted_slice.shape[0]):
             inpainted_slice_k = inpainted_slice[k].view(args.actual_image_size, args.actual_image_size).numpy()
             groundtruth_slice_k = original_slice[k,-1,...].view(args.actual_image_size, args.actual_image_size).numpy()
+            mask_slice_k = original_slice[k,-2,...].view(args.actual_image_size, args.actual_image_size).numpy()
 
             if args.npy_output_dir:
                 os.makedirs(os.path.join(args.npy_output_dir, "inpainted"), exist_ok=True)
@@ -203,6 +204,12 @@ def main(
                     file=os.path.join(args.npy_output_dir, "groundtruth", f"{subject_name}_slice_{slice_idx}.npy"),
                     arr=groundtruth_slice_k
                 )
+                if original_slice.shape[1] > 2:
+                    os.makedirs(os.path.join(args.npy_output_dir, "masks"), exist_ok=True)
+                    np.save(
+                        file=os.path.join(args.npy_output_dir, "masks", f"{subject_name}_slice_{slice_idx}.npy"),
+                        arr=mask_slice_k
+                    )
 
             mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
             snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
@@ -261,20 +268,31 @@ if __name__ == "__main__":
     print(f"Number of CUDA available devices (world size): {world_size}")
     print(f"IDs of CUDA available devices: {os.getenv('CUDA_VISIBLE_DEVICES')}")
 
-    # image idx and slice idx to inpaint
+    # image idx and slice idx to inpaint (IXI dataset)
+    # images_slices_to_inpaint = [
+    #     (0, 113),
+    #     (1, 125),
+    #     (2, 113),
+    #     (3, 123),
+    #     (4, 132),
+    #     (5, 120),
+    #     (6, 121),
+    #     (6, 124),
+    #     (7, 139),
+    #     (8, 141),
+    #     (9, 150),
+    #     (10, 119),
+    # ]
+    # image idx and slice idx to inpaint (BRATS dataset)
     images_slices_to_inpaint = [
-        (0, 113),
-        (1, 125),
-        (2, 113),
-        (3, 123),
-        (4, 132),
-        (5, 120),
-        (6, 121),
-        (6, 124),
-        (7, 139),
-        (8, 141),
-        (9, 150),
-        (10, 119),
+        (0, 128),
+        (4, 125),
+        (6, 120),
+        (8, 142),
+        (10, 85),
+        (11, 115),
+        (16, 125),
+        (17, 125)
     ]
 
     if world_size > 0:
