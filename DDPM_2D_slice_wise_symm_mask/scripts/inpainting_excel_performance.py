@@ -5,6 +5,7 @@ import torch
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from typing import List, Dict
 
 from guided_diffusion import dist_util, logger
 from guided_diffusion.bratsloader import BRATSDataset
@@ -62,16 +63,20 @@ def plot_save_slices(
     slice_indices: list,
     subject_name: str,
     output_dir: str,
+    perf_metrics: List[Dict] = None,
 ):
     # Plot the original and inpainted slices
     for i in range(inpainted_batch.shape[0]):
         n_figs = original_batch.shape[1] + 2 # channels, inpainted, diff map
         width_ratios = ([1] * n_figs) + [0.05]
-        fig, axs = plt.subplots(1, n_figs+1, figsize=(3*n_figs, 3.5), gridspec_kw={"width_ratios": width_ratios})
+        fig, axs = plt.subplots(1, n_figs+1, figsize=(3.8*n_figs, 3.8), gridspec_kw={"width_ratios": width_ratios})
         for k in range(original_batch.shape[1]):
             _img_show = original_batch[i,k,...].view(actual_img_size, actual_img_size).numpy()
             axs[k].imshow(_img_show, cmap="gray")
-            axs[k].set_title(f"Channel {k}")
+            if k == original_batch.shape[1]-1:
+                axs[k].set_title("Groundtruth")
+            else:
+                axs[k].set_title(f"Channel {k+1}")
         
         inpainted_img = inpainted_batch[i].view(actual_img_size, actual_img_size).numpy()
         axs[-3].imshow(inpainted_img, cmap="gray")
@@ -81,8 +86,11 @@ def plot_save_slices(
         diff_map = inpainted_img - groundtruth_img
         ax_cb = axs[-2].imshow(diff_map, norm=mpl.colors.CenteredNorm(), cmap="seismic")
         axs[-2].set_title("Diff Map")
-
         fig.colorbar(ax_cb, ax=axs[-2], cax=axs[-1])
+
+        if perf_metrics is not None:
+            title_msg = " | ".join(f"{k} = {v:.5f}" for k, v in perf_metrics[i].items())
+            plt.suptitle(title_msg)
 
         plt.savefig(os.path.join(output_dir, f"{subject_name}_slice_{slice_indices[i]}.png"))
 
@@ -136,8 +144,22 @@ def main(
     model.to(device)
     logger.info("Model and diffusion loaded")
 
+    if args.override_seqtypes is not None:
+        # seqtypes example: "voided,mask,t1n"
+        override_seqtypes = args.override_seqtypes.split(",")
+        logger.log("Overriding seqtypes to: " + str(override_seqtypes))
+    else:
+        override_seqtypes = None
+
     # Load the dataset
-    brats_dataset = BRATSDataset(args.data_dir, test_flag=True)
+    brats_dataset = BRATSDataset(
+        args.data_dir,
+        test_flag=True,
+        override_seqtypes=override_seqtypes,
+        ref_mask=args.ref_mask,
+        max_samples=args.max_samples,
+        seed=args.bratsloader_seed,
+    )
 
     if len(brats_dataset) == 0:
         raise ValueError(f"No samples found in the dataset in {args.data_dir}")
@@ -151,10 +173,10 @@ def main(
 
     for i in range(len(brats_dataset)):
         filedict_i = brats_dataset.database[i]
-        if "BraTS-GLI-0166" not in filedict_i["t1n"]:
-            continue
-        
-        logger.info(f"Inpainting slices of {os.path.basename(filedict_i['t1n']).replace('.nii.gz', '')}")
+        # if "BraTS-GLI-0166" not in filedict_i["t1n"]:
+        #     continue
+
+        logger.info(f"Inpainting slices of image no. {i + 1} ...")
         batch_i, path_i, slicedict_i = brats_dataset[i]
 
         num_p_sample_loop_iters = math.ceil(len(slicedict_i) / args.sample_batch_size)
@@ -186,6 +208,38 @@ def main(
             x_noisy_batch_i_j = x_noisy_batch_i_j.cpu()
             original_batch_i_j = original_batch_i_j.cpu()
 
+            mse_list_batch, snr_list_batch, psnr_list_batch, ssim_list_batch = [], [], [], []
+            # calculate the performance metrics for the inpainted images
+            for k in range(inpainted_batch_i_j.shape[0]):
+                inpainted_slice_k = inpainted_batch_i_j[k].view(args.actual_image_size, args.actual_image_size).numpy()
+                groundtruth_slice_k = original_batch_i_j[k,-1,...].view(args.actual_image_size, args.actual_image_size).numpy()
+
+                if args.npy_output_dir:
+                    os.makedirs(args.npy_output_dir, exist_ok=True)
+                    subject_name = os.path.basename(path_i).replace(".nii.gz", "")
+                    np.save(
+                        file=os.path.join(args.npy_output_dir, f"{subject_name}_slice_{slicedict_i_j[k]}.npy"),
+                        arr=inpainted_slice_k
+                    )
+
+                mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
+                snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
+                psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
+                ssim_k = structural_similarity(inpainted_slice_k, groundtruth_slice_k, data_range=1)
+
+                mse_list_batch.append(mse_k)
+                snr_list_batch.append(snr_k)
+                psnr_list_batch.append(psnr_k)
+                ssim_list_batch.append(ssim_k)
+
+                subject_names.append(os.path.basename(path_i).replace(".nii.gz", ""))
+                slice_indices.append(slicedict_i_j[k])
+            
+            mse_list.extend(mse_list_batch)
+            snr_list.extend(snr_list_batch)
+            psnr_list.extend(psnr_list_batch)
+            ssim_list.extend(ssim_list_batch)
+
             # Save the inpainted and original slices
             if args.png_output_dir:
                 os.makedirs(args.png_output_dir, exist_ok=True)
@@ -196,24 +250,16 @@ def main(
                     slice_indices=slicedict_i_j,
                     subject_name=os.path.basename(path_i).replace(".nii.gz", ""),
                     output_dir=args.png_output_dir,
+                    perf_metrics=[
+                        {
+                            "MSE": mse_list_batch[k],
+                            "SNR": snr_list_batch[k],
+                            "PSNR": psnr_list_batch[k],
+                            "SSIM": ssim_list_batch[k],
+                        }
+                        for k in range(len(slicedict_i_j))
+                    ]
                 )
-
-            # calculate the performance metrics for the inpainted images
-            for k in range(inpainted_batch_i_j.shape[0]):
-                inpainted_slice_k = inpainted_batch_i_j[k].view(args.actual_image_size, args.actual_image_size).numpy()
-                groundtruth_slice_k = original_batch_i_j[k,-1,...].view(args.actual_image_size, args.actual_image_size).numpy()
-
-                mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
-                snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
-                psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
-                ssim_k = structural_similarity(inpainted_slice_k, groundtruth_slice_k, data_range=1)
-
-                subject_names.append(os.path.basename(path_i).replace(".nii.gz", ""))
-                slice_indices.append(slicedict_i_j[k])
-                mse_list.append(mse_k)
-                snr_list.append(snr_k)
-                psnr_list.append(psnr_k)
-                ssim_list.append(ssim_k)
 
     # Calculate the performance metrics
     mse_list = np.array(mse_list)
@@ -237,6 +283,13 @@ def main(
     logger.info(f"PSNR: {np.mean(pr_psnr_list)} ± {np.std(pr_psnr_list)}")
     logger.info(f"SSIM: {np.mean(pr_ssim_list)} ± {np.std(pr_ssim_list)}")
     logger.info("====================================")
+    logger.info("Quantiles of Performance Metrics:")
+    for quantile in [0.25, 0.5, 0.75]:
+        logger.info(f"MSE {quantile}: {np.quantile(pr_mse_list, quantile)}")
+        logger.info(f"SNR {quantile}: {np.quantile(pr_snr_list, quantile)}")
+        logger.info(f"PSNR {quantile}: {np.quantile(pr_psnr_list, quantile)}")
+        logger.info(f"SSIM {quantile}: {np.quantile(pr_ssim_list, quantile)}")
+    logger.info("====================================")
 
     # Save the performance metrics to a Excel file
     performance_metrics = {
@@ -255,6 +308,13 @@ def main(
             f"performance_metrics_{checkpoint_name}.xlsx"
         )
     )
+    if args.repo_results_dir:
+        performance_metrics_df.to_excel(
+            os.path.join(
+                args.repo_results_dir,
+                f"performance_metrics_{checkpoint_name}.xlsx"
+            )
+        )
 
 
 if __name__ == "__main__":
@@ -268,6 +328,12 @@ if __name__ == "__main__":
     parser.add_argument("--sample_batch_size", type=int, default=4)
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--png_output_dir", type=str, default=None)
+    parser.add_argument("--npy_output_dir", type=str, default=None)
+    parser.add_argument("--repo_results_dir", type=str, default=None)
+    parser.add_argument("--override_seqtypes", type=str, default=None)
+    parser.add_argument("--ref_mask", type=str, default="mask")
+    parser.add_argument("--max_samples", type=int, default=None)
+    parser.add_argument("--bratsloader_seed", type=int, default=None)
 
     args = parser.parse_args()
 

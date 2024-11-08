@@ -46,7 +46,11 @@ def setup_dist(rank, world_size):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ['MASTER_PORT'] = f"1234{port_suffix}"
 
-    dist.init_process_group(backend='gloo', rank=rank, world_size=world_size)
+    try:
+        dist.init_process_group(backend='gloo', rank=rank, world_size=world_size)
+    except dist.DistNetworkError as e:
+        os.environ['MASTER_PORT'] = f"12349"
+        dist.init_process_group(backend='gloo', rank=rank, world_size=world_size)
 
     # os.environ["MASTER_ADDR"] = comm.bcast(hostname, root=0)
     # os.environ["RANK"] = str(comm.rank)

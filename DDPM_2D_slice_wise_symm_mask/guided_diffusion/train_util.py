@@ -2,6 +2,7 @@ import copy
 import functools
 import os
 import random
+import datetime as dt
 
 import blobfile as bf
 import torch as th
@@ -212,7 +213,8 @@ class TrainLoop:
             i += 1
 
             if self.step % self.log_interval == 0:
-                logger.log(f"Logging metrics at step {self.step + self.resume_step} ...")
+                _utcnow = dt.datetime.now(dt.timezone.utc)
+                logger.log(f"[{_utcnow}] Logging metrics at step {self.step + self.resume_step} ...")
                 logger.dumpkvs()
             if self.step % self.save_interval == 0:
                 self.save()
@@ -295,7 +297,8 @@ class TrainLoop:
             state_dict = self.mp_trainer.master_params_to_state_dict(params)
             if dist.get_rank() == 0:
                 save_step = self.step + self.resume_step
-                logger.log(f"Saving model {rate} at step {save_step}...")
+                _utcnow = dt.datetime.now(dt.timezone.utc)
+                logger.log(f"[{_utcnow}] Saving model {rate} at step {save_step}...")
                 if not rate:
                     filename = f"savedmodel{(save_step):06d}.pt"
                 else:
