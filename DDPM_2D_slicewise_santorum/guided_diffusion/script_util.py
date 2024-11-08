@@ -46,7 +46,9 @@ def model_and_diffusion_defaults():
     """
     res = dict(
         image_size=64,
-        num_channels=128,
+        num_model_channels=128,
+        num_in_channels=3,
+        num_out_channels=2,
         num_res_blocks=2,
         num_heads=4,
         num_heads_upsample=-1,

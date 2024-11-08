@@ -186,7 +186,7 @@ class TrainLoop:
                     cond_all.append(cond[..., s])
                 batch_stack = th.stack(batch_all)
                 cond_stack = th.stack(cond_all)
-                batch_stack = batch_stack.squeeze()
+                batch_stack = batch_stack.squeeze(1).squeeze(-1)
                 cond_stack = cond_stack.squeeze(1).squeeze(-1)
 
             except StopIteration:
@@ -205,7 +205,7 @@ class TrainLoop:
                     cond_all.append(cond[..., s])
                 batch_stack = th.stack(batch_all)
                 cond_stack = th.stack(cond_all)
-                batch_stack = batch_stack.squeeze()
+                batch_stack = batch_stack.squeeze(1).squeeze(-1)
                 cond_stack = cond_stack.squeeze(1).squeeze(-1)
 
             self.run_step(batch_stack, cond_stack)
