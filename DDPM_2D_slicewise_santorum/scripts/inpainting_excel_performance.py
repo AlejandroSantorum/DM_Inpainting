@@ -40,7 +40,6 @@ def get_model_and_diffusion(
         rescale_learned_sigmas=False,
         # model defaults
         image_size=model_image_size,
-        num_channels=model_num_in_channels,
         num_in_channels=model_num_in_channels,
         num_out_channels=model_num_out_channels,
         num_model_channels=128,  # why 128 channels?
@@ -184,6 +183,11 @@ def main(
 
     logger.info(f"Loaded {len(brain_dataset)} samples from brain dataset")
 
+    if args.npy_output_dir:
+        os.makedirs(os.path.join(args.npy_output_dir, "inpainted"), exist_ok=True)
+        os.makedirs(os.path.join(args.npy_output_dir, "groundtruth"), exist_ok=True)
+        os.makedirs(os.path.join(args.npy_output_dir, "ref_mask"), exist_ok=True)
+
     # Set the seed for reproducibility
     set_seed(0)
 
@@ -197,6 +201,7 @@ def main(
 
         logger.info(f"Inpainting slices of image no. {i + 1} ...")
         batch_i, path_i, slicedict_i = brain_dataset[i]
+        ref_mask_i = brain_dataset.get_reference_img(i)
 
         num_p_sample_loop_iters = math.ceil(len(slicedict_i) / args.sample_batch_size)
 
@@ -210,6 +215,7 @@ def main(
             slicedict_i_j = slicedict_i[start_idx:end_idx]
             # get the batch of images to inpaint based on the slice indices
             batch_i_j = batch_i[:,:,:,slicedict_i_j]
+            ref_mask_i_j = ref_mask_i[:,:,slicedict_i_j]
             # permute the dimensions to match the model's input shape (batch size, channels, height, width)
             batch_i_j = torch.permute(batch_i_j, (3, 0, 1, 2))
 
@@ -232,19 +238,27 @@ def main(
             for k in range(inpainted_batch_i_j.shape[0]):
                 inpainted_slice_k = inpainted_batch_i_j[k].view(args.actual_image_size, args.actual_image_size).numpy()
                 groundtruth_slice_k = original_batch_i_j[k,-1,...].view(args.actual_image_size, args.actual_image_size).numpy()
+                ref_mask_slice_k = ref_mask_i_j[:,:,k].view(args.actual_image_size, args.actual_image_size).numpy()
 
                 if args.npy_output_dir:
-                    os.makedirs(args.npy_output_dir, exist_ok=True)
                     subject_name = os.path.basename(path_i).replace(".nii.gz", "")
                     np.save(
-                        file=os.path.join(args.npy_output_dir, f"{subject_name}_slice_{slicedict_i_j[k]}.npy"),
+                        file=os.path.join(args.npy_output_dir, "inpainted", f"{subject_name}_slice_{slicedict_i_j[k]}.npy"),
                         arr=inpainted_slice_k
                     )
+                    np.save(
+                        file=os.path.join(args.npy_output_dir, "groundtruth", f"{subject_name}_slice_{slicedict_i_j[k]}.npy"),
+                        arr=groundtruth_slice_k
+                    )
+                    np.save(
+                        file=os.path.join(args.npy_output_dir, "ref_mask", f"{subject_name}_slice_{slicedict_i_j[k]}.npy"),
+                        arr=ref_mask_slice_k
+                    )
 
-                mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
-                snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
-                psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
-                ssim_k = structural_similarity(inpainted_slice_k, groundtruth_slice_k, data_range=1)
+                mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
+                snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
+                psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
+                ssim_k = structural_similarity(inpainted_slice_k, groundtruth_slice_k, mask=ref_mask_slice_k, data_range=1)
 
                 mse_list_batch.append(mse_k)
                 snr_list_batch.append(snr_k)
@@ -324,10 +338,11 @@ def main(
     performance_metrics_df.to_excel(
         os.path.join(
             os.path.dirname(args.model_pt_path),
-            f"performance_metrics_{checkpoint_name}.xlsx"
+            f"performance_metrics_{checkpoint_name}_test.xlsx"  # TODO: change this to a more general name
         )
     )
     if args.repo_results_dir:
+        os.makedirs(args.repo_results_dir, exist_ok=True)
         performance_metrics_df.to_excel(
             os.path.join(
                 args.repo_results_dir,

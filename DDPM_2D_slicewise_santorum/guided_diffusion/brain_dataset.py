@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import nibabel as nib
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +61,6 @@ class BrainDataset(torch.utils.data.Dataset):
                 np.random.shuffle(dirs_sorted)
             
             if num_cutoff_samples is not None:
-                print(f"Considering only {num_cutoff_samples} samples ...")
                 if test_flag:
                     logger.info(f"Reading the last {num_cutoff_samples} samples ...")
                     # using the last 'num_cutoff_samples' samples
@@ -71,8 +71,8 @@ class BrainDataset(torch.utils.data.Dataset):
                     dirs_sorted = dirs_sorted[:int(num_cutoff_samples)]
             
             if num_max_samples is not None:
-                if num_max_samples < len(dirs_sorted):
-                    raise ValueError("num_max_samples must be greater than the number of samples.")
+                if num_max_samples > len(dirs_sorted):
+                    raise ValueError("num_max_samples must be smaller than the number of available samples.")
 
                 logger.info(f"Considering only {num_max_samples} samples ...")
                 dirs_sorted = dirs_sorted[:int(num_max_samples)]
@@ -131,3 +131,8 @@ class BrainDataset(torch.utils.data.Dataset):
         
     def __len__(self):
         return len(self.database)
+
+    def get_reference_img(self, x):
+        filedict = self.database[x]
+        nib_img = nib.load(filedict[self.reference_img_type]).get_fdata(dtype=np.float32)
+        return torch.tensor(nib_img)
