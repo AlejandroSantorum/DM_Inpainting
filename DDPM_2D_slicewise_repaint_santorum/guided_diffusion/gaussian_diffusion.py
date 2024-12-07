@@ -404,6 +404,7 @@ class GaussianDiffusion:
         clip_denoised=True,
         denoised_fn=None,
         model_kwargs=None,
+        **kwargs,
     ):
         """
         Sample x_{t-1} from the model at the given timestep.
@@ -432,6 +433,11 @@ class GaussianDiffusion:
         noise = th.randn_like(x[:, -1:, ...])
         nonzero_mask = (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
         sample = out["mean"] + nonzero_mask * th.exp(0.5 * out["log_variance"]) * noise
+        ##### NEW ################################
+        voided = kwargs["voided"]
+        gt_mask = kwargs["gt_mask"]
+        sample = gt_mask * sample + (1 - gt_mask) * voided
+        ##########################################
         return {"sample": sample, "pred_xstart": out["pred_xstart"]}
 
     def p_sample_loop(
@@ -558,7 +564,21 @@ class GaussianDiffusion:
             img = th.randn(*shape, device=device)
         indices = list(range(time))[::-1]
 
+        # NEW: assuming that the first channel is the t1-voided image
+        voided = img[:, 0:1, ...]
+        # NEW: assuming that the second channel is the binary mask (mask to inpaint)
+        gt_mask = img[:, 1:2, ...]
+        # NEW: update model kwargs with the ground truth mask and the voided image
+        repaint_model_kwargs = {
+            "voided": voided,
+            "gt_mask": gt_mask,
+        }
+
         org_MRI = img[:, :-1, ...]  # original brain MR image (t1-voided + segmentation mask)
+
+        # NEW: assuming that the last channel is the noise,
+        # that is the only input the model will receive
+        img = img[:, -1:, ...]
 
         if progress:
             # Lazy import so that we don't depend on tqdm.
@@ -573,9 +593,12 @@ class GaussianDiffusion:
 
             with th.no_grad():
                 # be careful: model.image_size is always a power of 2, so not the actual image size
-                if img.shape != (imarr.shape[0], model.in_channels, imarr.shape[2], imarr.shape[3]):
-                    # in every step, make sure to concatenate the original image to the sampled segmentation mask
-                    img = torch.cat((org_MRI, img), dim=1)
+
+                ##########################################
+                # if img.shape != (imarr.shape[0], model.in_channels, imarr.shape[2], imarr.shape[3]):
+                #     # in every step, make sure to concatenate the original image to the sampled segmentation mask
+                #     img = torch.cat((org_MRI, img), dim=1)
+                ##########################################
 
                 out = self.p_sample(
                     model=model,
@@ -584,6 +607,7 @@ class GaussianDiffusion:
                     clip_denoised=clip_denoised,
                     denoised_fn=denoised_fn,
                     model_kwargs=model_kwargs,
+                    **repaint_model_kwargs,  # NEW: pass the voided image and the GT mask
                 )
                 yield out
 

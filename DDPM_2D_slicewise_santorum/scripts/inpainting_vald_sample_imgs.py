@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from typing import List, Dict
 
 from guided_diffusion import dist_util, logger
-from guided_diffusion.bratsloader import BRATSDataset
+from guided_diffusion.brain_dataset import BrainDataset
 from guided_diffusion.script_util import create_model_and_diffusion
 
 from utils.metrics import mse_2d, snr_2d, psnr_2d
@@ -20,7 +20,12 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
-def get_model_and_diffusion(model_image_size: int, model_pt_path: str):
+def get_model_and_diffusion(
+    model_image_size: int,
+    model_num_in_channels: int,
+    model_num_out_channels: int,
+    model_pt_path: str,
+):
     model, diffusion = create_model_and_diffusion(
         # diffusion defaults
         learn_sigma=True,
@@ -33,7 +38,9 @@ def get_model_and_diffusion(model_image_size: int, model_pt_path: str):
         rescale_learned_sigmas=False,
         # model defaults
         image_size=model_image_size,
-        num_channels=128,  # why 128 channels?
+        num_in_channels=model_num_in_channels,
+        num_out_channels=model_num_out_channels,
+        num_model_channels=128,  # why 128 channels?
         num_res_blocks=2,
         num_heads=1,
         num_heads_upsample=-1,
@@ -120,8 +127,6 @@ def main(
     
     logger.info(f"Input Arguments: {args}")
 
-    set_seed(0)
-
     # Set the distributed configuration
     dist_util.setup_dist(rank, world_size)
 
@@ -136,37 +141,58 @@ def main(
     
     logger.info(f"Device: {device}")
 
+    if args.input_img_types is not None:
+        input_img_types = args.input_img_types.split(",")
+        logger.log("Using input image types: " + str(input_img_types))
+    else:
+        input_img_types = None
+
+    if args.output_img_types is not None:
+        output_img_types = args.output_img_types.split(",")
+        model_num_in_channels = len(output_img_types)
+        logger.log("Using output image types: " + str(output_img_types))
+    else:
+        model_num_in_channels = 3  # default number of input channels
+        output_img_types = None
+
     # Load the model and diffusion
     model, diffusion = get_model_and_diffusion(
-        model_image_size=args.model_image_size, model_pt_path=args.model_pt_path
+        model_image_size=args.model_image_size,
+        model_num_in_channels=model_num_in_channels,
+        model_num_out_channels=2,  # default
+        model_pt_path=args.model_pt_path
     )
     model.to(device)
     logger.info("Model and diffusion loaded")
 
-    if args.override_seqtypes is not None:
-        # seqtypes example: "voided,mask,t1n"
-        override_seqtypes = args.override_seqtypes.split(",")
-        logger.log("Overriding seqtypes to: " + str(override_seqtypes))
-    else:
-        override_seqtypes = None
-
-    # Load the dataset
-    brats_dataset = BRATSDataset(
-        args.data_dir,
-        test_flag=True,
-        override_seqtypes=override_seqtypes,
-        ref_mask=args.ref_mask,
-        max_samples=args.max_samples,
-        seed=args.bratsloader_seed,
+    logger.log(f"Creating brain dataset loading from '{args.data_dir}'")
+    brain_dataset = BrainDataset(
+        directory=args.data_dir,
+        test_flag=True,  # testing
+        input_img_types=input_img_types,
+        output_img_types=output_img_types,
+        reference_img_type=args.reference_img_type,
+        num_cutoff_samples=args.num_cutoff_samples,
+        num_max_samples=args.num_max_samples,
+        seed=args.dataset_seed,
     )
 
-    if len(brats_dataset) == 0:
+    if len(brain_dataset) == 0:
         raise ValueError(f"No samples found in the dataset in {args.data_dir}")
 
-    logger.info(f"Loaded {len(brats_dataset)} samples from BRATS dataset")
+    logger.info(f"Loaded {len(brain_dataset)} samples from brain dataset")
+
+    if args.npy_output_dir:
+        os.makedirs(os.path.join(args.npy_output_dir, "inpainted"), exist_ok=True)
+        os.makedirs(os.path.join(args.npy_output_dir, "groundtruth"), exist_ok=True)
+        os.makedirs(os.path.join(args.npy_output_dir, "ref_mask"), exist_ok=True)
+
+    # Set the seed for reproducibility
+    set_seed(0)
 
     for img_idx, slice_idx in images_slices_to_inpaint:
-        batch_i, path_i, slicedict_i = brats_dataset[img_idx]
+        batch_i, path_i, slicedict_i = brain_dataset[img_idx]
+        ref_mask_i = brain_dataset.get_reference_img(img_idx)
 
         logger.info(f"Inpainting slice no. {slice_idx} of {os.path.basename(path_i)}")
         # get slice to inpaint of shape (1, num_channels, height, width)
@@ -190,11 +216,9 @@ def main(
         for k in range(inpainted_slice.shape[0]):
             inpainted_slice_k = inpainted_slice[k].view(args.actual_image_size, args.actual_image_size).numpy()
             groundtruth_slice_k = original_slice[k,-1,...].view(args.actual_image_size, args.actual_image_size).numpy()
-            mask_slice_k = original_slice[k,-2,...].view(args.actual_image_size, args.actual_image_size).numpy()
+            ref_mask_slice_k = ref_mask_i[:,:,slice_idx].view(args.actual_image_size, args.actual_image_size).numpy()
 
             if args.npy_output_dir:
-                os.makedirs(os.path.join(args.npy_output_dir, "inpainted"), exist_ok=True)
-                os.makedirs(os.path.join(args.npy_output_dir, "groundtruth"), exist_ok=True)
                 subject_name = os.path.basename(path_i).replace(".nii.gz", "")
                 np.save(
                     file=os.path.join(args.npy_output_dir, "inpainted", f"{subject_name}_slice_{slice_idx}.npy"),
@@ -204,17 +228,15 @@ def main(
                     file=os.path.join(args.npy_output_dir, "groundtruth", f"{subject_name}_slice_{slice_idx}.npy"),
                     arr=groundtruth_slice_k
                 )
-                if original_slice.shape[1] > 2:
-                    os.makedirs(os.path.join(args.npy_output_dir, "masks"), exist_ok=True)
-                    np.save(
-                        file=os.path.join(args.npy_output_dir, "masks", f"{subject_name}_slice_{slice_idx}.npy"),
-                        arr=mask_slice_k
-                    )
+                np.save(
+                    file=os.path.join(args.npy_output_dir, "ref_mask", f"{subject_name}_slice_{slice_idx}.npy"),
+                    arr=ref_mask_slice_k
+                )
 
-            mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
-            snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
-            psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k)
-            ssim_k = structural_similarity(inpainted_slice_k, groundtruth_slice_k, data_range=1)
+            mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
+            snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
+            psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
+            ssim_k = structural_similarity(inpainted_slice_k, groundtruth_slice_k, mask=ref_mask_slice_k, data_range=1)
 
             mse_list_batch.append(mse_k)
             snr_list_batch.append(snr_k)
@@ -256,10 +278,12 @@ if __name__ == "__main__":
     parser.add_argument("--sample_batch_size", type=int, default=4)
     parser.add_argument("--png_output_dir", type=str, default=None)
     parser.add_argument("--npy_output_dir", type=str, default=None)
-    parser.add_argument("--override_seqtypes", type=str, default=None)
-    parser.add_argument("--ref_mask", type=str, default="mask")
-    parser.add_argument("--max_samples", type=int, default=None)
-    parser.add_argument("--bratsloader_seed", type=int, default=None)
+    parser.add_argument("--input_img_types", type=str, default=None)
+    parser.add_argument("--output_img_types", type=str, default=None)
+    parser.add_argument("--reference_img_type", type=str, default="mask")
+    parser.add_argument("--num_cutoff_samples", type=int, default=None)
+    parser.add_argument("--num_max_samples", type=int, default=None)
+    parser.add_argument("--dataset_seed", type=int, default=None)
 
     args = parser.parse_args()
 
@@ -269,31 +293,31 @@ if __name__ == "__main__":
     print(f"IDs of CUDA available devices: {os.getenv('CUDA_VISIBLE_DEVICES')}")
 
     # image idx and slice idx to inpaint (IXI dataset)
-    # images_slices_to_inpaint = [
-    #     (0, 113),
-    #     (1, 125),
-    #     (2, 113),
-    #     (3, 123),
-    #     (4, 132),
-    #     (5, 120),
-    #     (6, 121),
-    #     (6, 124),
-    #     (7, 139),
-    #     (8, 141),
-    #     (9, 150),
-    #     (10, 119),
-    # ]
-    # image idx and slice idx to inpaint (BRATS dataset)
     images_slices_to_inpaint = [
-        (0, 128),
-        (4, 125),
-        (6, 120),
-        (8, 142),
-        (10, 85),
-        (11, 115),
-        (16, 125),
-        (17, 125)
+        (0, 113),
+        (1, 125),
+        (2, 113),
+        (3, 123),
+        (4, 132),
+        (5, 120),
+        (6, 121),
+        (6, 124),
+        (7, 139),
+        (8, 141),
+        (9, 150),
+        (10, 119),
     ]
+    # image idx and slice idx to inpaint (BRATS dataset)
+    # images_slices_to_inpaint = [
+    #     (0, 128),
+    #     (4, 125),
+    #     (6, 120),
+    #     (8, 142),
+    #     (10, 85),
+    #     (11, 115),
+    #     (16, 125),
+    #     (17, 125)
+    # ]
 
     if world_size > 0:
         torch.multiprocessing.spawn(

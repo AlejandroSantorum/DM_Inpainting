@@ -12,8 +12,7 @@ from guided_diffusion.brain_dataset import BrainDataset
 from guided_diffusion.script_util import create_model_and_diffusion
 
 import numpy as np
-from utils.metrics import mse_2d, snr_2d, psnr_2d
-from skimage.metrics import structural_similarity
+from utils.metrics import mse_2d, snr_2d, psnr_2d, ssim_2d
 
 
 def set_seed(seed):
@@ -258,7 +257,7 @@ def main(
                 mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
                 snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
                 psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
-                ssim_k = structural_similarity(inpainted_slice_k, groundtruth_slice_k, mask=ref_mask_slice_k, data_range=1)
+                ssim_k = ssim_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
 
                 mse_list_batch.append(mse_k)
                 snr_list_batch.append(snr_k)
@@ -338,7 +337,7 @@ def main(
     performance_metrics_df.to_excel(
         os.path.join(
             os.path.dirname(args.model_pt_path),
-            f"performance_metrics_{checkpoint_name}_test.xlsx"  # TODO: change this to a more general name
+            f"performance_metrics_{checkpoint_name}.xlsx"
         )
     )
     if args.repo_results_dir:

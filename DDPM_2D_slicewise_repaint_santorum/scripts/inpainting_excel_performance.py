@@ -12,8 +12,7 @@ from guided_diffusion.brain_dataset import BrainDataset
 from guided_diffusion.script_util import create_model_and_diffusion
 
 import numpy as np
-from utils.metrics import mse_2d, snr_2d, psnr_2d
-from skimage.metrics import structural_similarity
+from utils.metrics import mse_2d, snr_2d, psnr_2d, ssim_2d
 
 
 def set_seed(seed):
@@ -153,8 +152,8 @@ def main(
         model_num_in_channels = len(output_img_types)
         logger.log("Using output image types: " + str(output_img_types))
     else:
-        model_num_in_channels = 3  # default number of input channels
-        output_img_types = None
+        model_num_in_channels = 1  # default number of input channels for the RePaint-based model
+        output_img_types = ["voided", "mask", "brain"]
 
     # Load the model and diffusion
     model, diffusion = get_model_and_diffusion(
@@ -258,7 +257,7 @@ def main(
                 mse_k = mse_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
                 snr_k = snr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
                 psnr_k = psnr_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
-                ssim_k = structural_similarity(inpainted_slice_k, groundtruth_slice_k, mask=ref_mask_slice_k, data_range=1)
+                ssim_k = ssim_2d(test_img=inpainted_slice_k, ref_img=groundtruth_slice_k, mask=ref_mask_slice_k)
 
                 mse_list_batch.append(mse_k)
                 snr_list_batch.append(snr_k)
