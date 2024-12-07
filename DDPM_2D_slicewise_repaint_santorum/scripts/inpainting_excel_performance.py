@@ -152,8 +152,8 @@ def main(
         model_num_in_channels = len(output_img_types)
         logger.log("Using output image types: " + str(output_img_types))
     else:
-        model_num_in_channels = 3  # default number of input channels
-        output_img_types = None
+        model_num_in_channels = 1  # default number of input channels for the RePaint-based model
+        output_img_types = ["voided", "mask", "brain"]
 
     # Load the model and diffusion
     model, diffusion = get_model_and_diffusion(
@@ -337,7 +337,7 @@ def main(
     performance_metrics_df.to_excel(
         os.path.join(
             os.path.dirname(args.model_pt_path),
-            f"performance_metrics_{checkpoint_name}.xlsx"
+            f"performance_metrics_{checkpoint_name}_test.xlsx"  # TODO: change this to a more general name
         )
     )
     if args.repo_results_dir:
