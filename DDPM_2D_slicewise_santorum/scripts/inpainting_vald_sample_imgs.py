@@ -293,31 +293,35 @@ if __name__ == "__main__":
     print(f"IDs of CUDA available devices: {os.getenv('CUDA_VISIBLE_DEVICES')}")
 
     # image idx and slice idx to inpaint (IXI dataset)
-    images_slices_to_inpaint = [
-        (0, 113),
-        (1, 125),
-        (2, 113),
-        (3, 123),
-        (4, 132),
-        (5, 120),
-        (6, 121),
-        (6, 124),
-        (7, 139),
-        (8, 141),
-        (9, 150),
-        (10, 119),
-    ]
-    # image idx and slice idx to inpaint (BRATS dataset)
     # images_slices_to_inpaint = [
-    #     (0, 128),
-    #     (4, 125),
-    #     (6, 120),
-    #     (8, 142),
-    #     (10, 85),
-    #     (11, 115),
-    #     (16, 125),
-    #     (17, 125)
+    #     (0, 113),
+    #     (1, 125),
+    #     (2, 113),
+    #     (3, 123),
+    #     (4, 132),
+    #     (5, 120),
+    #     (6, 121),
+    #     (6, 124),
+    #     (7, 139),
+    #     (8, 141),
+    #     (9, 150),
+    #     (10, 119),
     # ]
+
+    # image idx and slice idx to inpaint (BRATS dataset)
+    images_slices_to_inpaint = [
+        (1, 95),
+        (3, 105),
+        (3, 125),
+        (6, 110),
+        (8, 120),
+        (8, 140),
+        (9, 120),
+        (12, 120),
+        (12, 140),
+        (15, 100),
+        (19, 120),
+    ]
 
     if world_size > 0:
         torch.multiprocessing.spawn(
