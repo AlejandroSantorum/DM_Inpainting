@@ -73,7 +73,7 @@ def plot_save_slices(
 ):
     # Plot the original and inpainted slices
     for i in range(inpainted_batch.shape[0]):
-        n_figs = original_batch.shape[1] + 2 # channels, inpainted, diff map
+        n_figs = original_batch.shape[1] + 2  # channels, inpainted, diff map
         width_ratios = ([1] * n_figs) + [0.05]
         fig, axs = plt.subplots(1, n_figs+1, figsize=(3.8*n_figs, 3.8), gridspec_kw={"width_ratios": width_ratios})
         for k in range(original_batch.shape[1]):

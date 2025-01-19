@@ -11,7 +11,7 @@ from guided_diffusion.bratsloader import BRATSDataset
 from guided_diffusion.script_util import create_model_and_diffusion
 
 from utils.metrics import mse_2d, snr_2d, psnr_2d
-from skimage.metrics import structural_similarity
+from skimage.metrics import structural_similarity  # TODO: FIXME, use ssim_2d from utils.metrics
 
 
 def set_seed(seed):
