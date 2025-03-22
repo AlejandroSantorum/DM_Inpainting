@@ -173,21 +173,34 @@ class TrainLoop:
             or self.step + self.resume_step < self.lr_anneal_steps
         ):
             try:
-                batch, cond, slice_dict = next(data_iter)
-                slice_rand = random.shuffle(slice_dict)
-                if len(slice_dict) >= 16:
-                    slices_chosen = random.sample(slice_dict, 16)
-                else:
-                    slices_chosen = random.sample(slice_dict, len(slice_dict))
-                batch_all = []
-                cond_all = []
-                for s in slices_chosen:
-                    batch_all.append(batch[..., s])
-                    cond_all.append(cond[..., s])
-                batch_stack = th.stack(batch_all)
-                cond_stack = th.stack(cond_all)
-                batch_stack = batch_stack.squeeze(1).squeeze(-1)
-                cond_stack = cond_stack.squeeze(1).squeeze(-1)
+                # batch, cond, slice_dict = next(data_iter)
+                batch, cond = next(data_iter)
+
+                print(f"[TrainLoop run_loop] batch shape: {batch.shape}")
+                print(f"[TrainLoop run_loop] cond shape: {cond.shape}")
+                # print(f"[TrainLoop run_loop] slice_dict length: {len(slice_dict)}")
+
+                # slice_rand = random.shuffle(slice_dict)
+                # if len(slice_dict) >= 16:
+                #     slices_chosen = random.sample(slice_dict, 16)
+                # else:
+                #     slices_chosen = random.sample(slice_dict, len(slice_dict))
+                # batch_all = []
+                # cond_all = []
+                # for s in slices_chosen:
+                #     batch_all.append(batch[..., s])
+                #     cond_all.append(cond[..., s])
+                # batch_stack = th.stack(batch_all)
+                # cond_stack = th.stack(cond_all)
+                # batch_stack = batch_stack.squeeze(1).squeeze(-1)
+                # cond_stack = cond_stack.squeeze(1).squeeze(-1)
+                ############################################
+                # TODO: FIXME
+                #   batch_stack shape: torch.Size([8, 2, 224, 224, 224])
+                #   cond_stack shape: torch.Size([8, 224, 224, 224]) -> [8, 1, 224, 224, 224] !!!
+                batch_stack = batch.squeeze(1).squeeze(-1)
+                cond_stack = cond.squeeze(1).squeeze(-1)
+                ############################################
 
             except StopIteration:
                 # StopIteration is thrown if dataset ends
@@ -207,6 +220,9 @@ class TrainLoop:
                 cond_stack = th.stack(cond_all)
                 batch_stack = batch_stack.squeeze(1).squeeze(-1)
                 cond_stack = cond_stack.squeeze(1).squeeze(-1)
+
+            print(f"[TrainLoop run_loop] batch_stack shape: {batch_stack.shape}")
+            print(f"[TrainLoop run_loop] cond_stack shape: {cond_stack.shape}")
 
             self.run_step(batch_stack, cond_stack)
 

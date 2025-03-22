@@ -120,14 +120,19 @@ class BrainDataset(torch.utils.data.Dataset):
         last_channel_img_fpath = filedict[seqtype]
 
         if self.test_flag:
-            return (output_single_img, last_channel_img_fpath, slicedict)
+            return output_single_img, last_channel_img_fpath #, slicedict
     
         # the target is the last image in the output_single_img
         target = output_single_img[-1, ...]
         target = target.unsqueeze(0)
         # the input is all other images
         output_single_img = output_single_img[:-1, ...]
-        return (output_single_img, target, slicedict)
+
+        print(f"[BrainDataset getitem] output_single_img shape: {output_single_img.shape}")
+        print(f"[BrainDataset getitem] target shape: {target.shape}")
+        print(f"[BrainDataset getitem] slicedict length: {len(slicedict)}")
+
+        return output_single_img, target #, slicedict
         
     def __len__(self):
         return len(self.database)
